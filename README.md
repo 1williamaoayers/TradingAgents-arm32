@@ -48,29 +48,29 @@ bash scripts/deploy.sh
 
 ```bash
 # 1. 创建部署目录
-mkdir -p /home/tradingagents/{data,logs,cache,backups}
+mkdir -p /home/tradingagents && cd /home/tradingagents
 
-# 2. 一键部署
-docker run -d \
-  --name tradingagents \
-  --restart unless-stopped \
-  -p 8501:8501 \
-  -v /home/tradingagents/.env:/app/.env \
-  -v /home/tradingagents/data:/app/data \
-  -v /home/tradingagents/logs:/app/logs \
-  -v /home/tradingagents/cache:/app/cache \
-  -v /home/tradingagents/backups:/app/backups \
-  ghcr.io/1williamaoayers/tradingagents-arm32:latest
+# 2. 下载配置文件
+curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml
+
+# 3. 一键启动 (包含MongoDB + Redis + 应用)
+docker-compose up -d
 
 # 访问应用: http://你的服务器IP:8501
 # 首次访问会自动创建配置文件,按提示填写API密钥即可
 ```
 
+**包含的服务**:
+- 🐳 **TradingAgents** - 主应用 (端口8501)
+- 🍃 **MongoDB** - 数据库 (自动配置)
+- 🔴 **Redis** - 缓存 (自动配置)
+
 **提示**: 
 - 📁 所有数据保存在 `/home/tradingagents/` 目录
 - 🔑 首次访问时,在Web界面配置API密钥
-- 🔄 重启容器: `docker restart tradingagents`
-- 📋 查看日志: `docker logs -f tradingagents`
+- 🔄 重启服务: `docker-compose restart`
+- 📋 查看日志: `docker-compose logs -f`
+- 🛑 停止服务: `docker-compose down`
 
 ---
 
