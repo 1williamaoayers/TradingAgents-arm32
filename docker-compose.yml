@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   tradingagents:
-    image: ghcr.io/1williamao/tradingagents-arm32:latest
+    image: ghcr.io/1williamaoayers/tradingagents-arm32:latest
     container_name: tradingagents
     restart: unless-stopped
     ports:

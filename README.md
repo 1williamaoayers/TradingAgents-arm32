@@ -42,6 +42,38 @@ bash scripts/deploy.sh
 
 ---
 
+### 🎯 懒人一键部署 (超简单!)
+
+**适用于**: 想要最快速度部署的用户
+
+```bash
+# 1. 创建部署目录
+mkdir -p /home/tradingagents/{data,logs,cache,backups}
+
+# 2. 一键部署
+docker run -d \
+  --name tradingagents \
+  --restart unless-stopped \
+  -p 8501:8501 \
+  -v /home/tradingagents/.env:/app/.env \
+  -v /home/tradingagents/data:/app/data \
+  -v /home/tradingagents/logs:/app/logs \
+  -v /home/tradingagents/cache:/app/cache \
+  -v /home/tradingagents/backups:/app/backups \
+  ghcr.io/1williamaoayers/tradingagents-arm32:latest
+
+# 访问应用: http://你的服务器IP:8501
+# 首次访问会自动创建配置文件,按提示填写API密钥即可
+```
+
+**提示**: 
+- 📁 所有数据保存在 `/home/tradingagents/` 目录
+- 🔑 首次访问时,在Web界面配置API密钥
+- 🔄 重启容器: `docker restart tradingagents`
+- 📋 查看日志: `docker logs -f tradingagents`
+
+---
+
 ### 方式2: 本地运行
 
 ```bash
