@@ -28,7 +28,7 @@ curl -fsSL https://get.docker.com | sh
 ### 2️⃣ 下载项目
 
 ```bash
-git clone https://github.com/yourusername/TradingAgents-arm32.git
+git clone https://github.com/1williamaoayers/TradingAgents-arm32.git
 cd TradingAgents-arm32
 ```
 
@@ -271,7 +271,7 @@ docker run -d -p 6379:6379 --name redis redis:7-alpine
 ## 🆘 需要帮助?
 
 - 📖 查看 [完整文档](docs/DOCKER.md)
-- 🐛 提交 [Issue](https://github.com/yourusername/TradingAgents-arm32/issues)
+- 🐛 提交 [Issue](https://github.com/1williamaoayers/TradingAgents-arm32/issues)
 - 💬 加入讨论群
 
 ---

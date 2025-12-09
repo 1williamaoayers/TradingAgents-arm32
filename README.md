@@ -28,7 +28,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/yourusername/TradingAgents-arm32.git
+git clone https://github.com/1williamaoayers/TradingAgents-arm32.git
 cd TradingAgents-arm32
 
 # 2. 一键部署
@@ -361,7 +361,7 @@ TradingAgents-arm32/
 ## 📞 联系方式
 
 - 📧 Email: your-email@example.com
-- 💬 Issues: [GitHub Issues](https://github.com/yourusername/TradingAgents-arm32/issues)
+- 💬 Issues: [GitHub Issues](https://github.com/1williamaoayers/TradingAgents-arm32/issues)
 
 ---
 
