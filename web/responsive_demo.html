@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📱 响应式设计演示</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        /* 头部 */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 2rem;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            color: white;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        /* 屏幕信息 */
+        .screen-info {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 2rem;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        .screen-info h2 {
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .info-item {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .info-item strong {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #667eea;
+        }
+        
+        /* 卡片网格 */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 1.5rem;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            color: #667eea;
+        }
+        
+        .card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .card .change {
+            font-size: 0.9rem;
+            color: #28a745;
+        }
+        
+        /* 按钮 */
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 0.75rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        /* 表格 */
+        .table-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 2rem;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            overflow-x: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        /* ========================================
+           移动端响应式设计
+           ======================================== */
+        
+        /* 手机端 */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.5rem !important;
+            }
+            
+            .header p {
+                font-size: 0.9rem !important;
+            }
+            
+            .card-grid {
+                grid-template-columns: 1fr !important;
+            }
+            
+            .button-group {
+                grid-template-columns: 1fr !important;
+            }
+            
+            .btn {
+                width: 100% !important;
+                padding: 0.75rem !important;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr !important;
+            }
+            
+            .table-container {
+                padding: 1rem !important;
+            }
+            
+            table {
+                font-size: 0.75rem !important;
+            }
+            
+            th, td {
+                padding: 0.5rem !important;
+            }
+        }
+        
+        /* 平板端 */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .card-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+            
+            .header h1 {
+                font-size: 2rem !important;
+            }
+        }
+        
+        /* 折叠屏外屏 */
+        @media (max-width: 768px) and (min-aspect-ratio: 9/20) {
+            .header {
+                padding: 1rem !important;
+            }
+            
+            .header h1 {
+                font-size: 1.3rem !important;
+            }
+            
+            .card {
+                padding: 0.8rem !important;
+            }
+        }
+        
+        /* 折叠屏内屏横屏 */
+        @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
+            .card-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+        }
+        
+        /* 触摸设备优化 */
+        @media (pointer: coarse) {
+            .btn {
+                min-height: 44px !important;
+            }
+        }
+        
+        /* 设备标签 */
+        .device-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #667eea;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            z-index: 1000;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="device-badge" id="deviceBadge">检测中...</div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>📱 响应式设计演示</h1>
+            <p>支持手机、平板、折叠屏和桌面</p>
+        </div>
+        
+        <div class="screen-info">
+            <h2>📊 屏幕信息</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <strong>屏幕宽度</strong>
+                    <span id="screenWidth">-</span>
+                </div>
+                <div class="info-item">
+                    <strong>屏幕高度</strong>
+                    <span id="screenHeight">-</span>
+                </div>
+                <div class="info-item">
+                    <strong>宽高比</strong>
+                    <span id="aspectRatio">-</span>
+                </div>
+                <div class="info-item">
+                    <strong>设备类型</strong>
+                    <span id="deviceType">-</span>
+                </div>
+                <div class="info-item">
+                    <strong>屏幕方向</strong>
+                    <span id="orientation">-</span>
+                </div>
+                <div class="info-item">
+                    <strong>像素比</strong>
+                    <span id="pixelRatio">-</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card-grid">
+            <div class="card">
+                <h3>指标 1</h3>
+                <div class="value">100</div>
+                <div class="change">+10%</div>
+            </div>
+            <div class="card">
+                <h3>指标 2</h3>
+                <div class="value">200</div>
+                <div class="change">+5%</div>
+            </div>
+            <div class="card">
+                <h3>指标 3</h3>
+                <div class="value">300</div>
+                <div class="change">+15%</div>
+            </div>
+            <div class="card">
+                <h3>指标 4</h3>
+                <div class="value">400</div>
+                <div class="change">+20%</div>
+            </div>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn">按钮 1</button>
+            <button class="btn">按钮 2</button>
+            <button class="btn">按钮 3</button>
+        </div>
+        
+        <div class="table-container">
+            <h2 style="margin-bottom: 1rem; color: #667eea;">📋 数据表格</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>股票代码</th>
+                        <th>股票名称</th>
+                        <th>当前价格</th>
+                        <th>涨跌幅</th>
+                        <th>成交量</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>01810.HK</td>
+                        <td>小米集团</td>
+                        <td>12.50</td>
+                        <td style="color: #28a745;">+2.5%</td>
+                        <td>1.2亿</td>
+                    </tr>
+                    <tr>
+                        <td>0700.HK</td>
+                        <td>腾讯控股</td>
+                        <td>350.00</td>
+                        <td style="color: #dc3545;">-1.2%</td>
+                        <td>800万</td>
+                    </tr>
+                    <tr>
+                        <td>000001.SZ</td>
+                        <td>平安银行</td>
+                        <td>15.80</td>
+                        <td style="color: #28a745;">+3.8%</td>
+                        <td>5000万</td>
+                    </tr>
+                    <tr>
+                        <td>AAPL</td>
+                        <td>苹果</td>
+                        <td>180.00</td>
+                        <td style="color: #28a745;">+0.5%</td>
+                        <td>6000万</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        function updateScreenInfo() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const ratio = (width / height).toFixed(2);
+            const pixelRatio = window.devicePixelRatio;
+            const orientation = width > height ? '横屏' : '竖屏';
+            
+            // 检测设备类型
+            let deviceType = '桌面端';
+            let badge = '🖥️ 桌面';
+            
+            if (width <= 768) {
+                // 检测折叠屏外屏
+                if (ratio < 0.5) {
+                    deviceType = '折叠屏外屏';
+                    badge = '📱 折叠屏外屏';
+                } else {
+                    deviceType = '手机端';
+                    badge = '📱 手机';
+                }
+            } else if (width <= 1024) {
+                // 检测折叠屏内屏
+                if (ratio >= 0.8 && ratio <= 1.2) {
+                    deviceType = '折叠屏内屏';
+                    badge = '📱 折叠屏内屏';
+                } else {
+                    deviceType = '平板端';
+                    badge = '📱 平板';
+                }
+            }
+            
+            // 更新显示
+            document.getElementById('screenWidth').textContent = width + 'px';
+            document.getElementById('screenHeight').textContent = height + 'px';
+            document.getElementById('aspectRatio').textContent = ratio;
+            document.getElementById('deviceType').textContent = deviceType;
+            document.getElementById('orientation').textContent = orientation;
+            document.getElementById('pixelRatio').textContent = pixelRatio;
+            document.getElementById('deviceBadge').textContent = badge;
+            
+            console.log('📱 设备信息:', {
+                width,
+                height,
+                ratio,
+                deviceType,
+                orientation
+            });
+        }
+        
+        // 初始更新
+        updateScreenInfo();
+        
+        // 监听窗口变化
+        window.addEventListener('resize', updateScreenInfo);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(updateScreenInfo, 100);
+        });
+    </script>
+</body>
+</html>

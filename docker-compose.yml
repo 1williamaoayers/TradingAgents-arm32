@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  tradingagents:
+    image: ghcr.io/1williamao/tradingagents-arm32:latest
+    container_name: tradingagents
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      - ./backups:/app/backups
+      - ./.env:/app/.env # 读写挂载,允许容器内修改配置
+    environment:
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8501/_stcore/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  data:
+  logs:
+  cache:
