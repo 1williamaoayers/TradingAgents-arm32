@@ -72,6 +72,14 @@ docker-compose up -d
 - 📋 查看日志: `docker-compose logs -f`
 - 🛑 停止服务: `docker-compose down`
 
+**🧪 测试数据库连接** (可选):
+```bash
+# 一键测试MongoDB和Redis是否正常工作
+docker exec -it tradingagents python scripts/test-database-connection.py
+
+# 看到 "🎉 所有测试通过!" 就表示数据库连接正常
+```
+
 ---
 
 ### 方式2: 本地运行
