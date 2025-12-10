@@ -4,7 +4,7 @@
 # ============================================
 
 # 阶段1: 基础镜像
-FROM python:3.11-slim as base
+FROM python:3.10-slim as base
 
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
@@ -77,5 +77,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # 使用初始化脚本作为入口点
 ENTRYPOINT ["/app/docker-init.sh"]
 
-# 启动命令
-CMD ["streamlit", "run", "web/主页.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# 启动Streamlit应用
+CMD ["python", "-m", "streamlit", "run", "web/app.py", "--server.address=0.0.0.0", "--server.port=8501"]

@@ -1,0 +1,616 @@
+#!/bin/bash
+
+# TradingAgents-CN 一键部署脚本（港股版 - 安全端口）
+# 作者: AI助手
+# 功能: 在VPS上一键部署TradingAgents-CN项目
+# 针对港股交易时间优化，按真实财报发布时间安排数据同步
+# 只暴露Web界面端口，内部服务通过容器网络通信，提高安全性
+
+# 设置颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}开始部署 TradingAgents-CN（港股版 - 安全端口）${NC}"
+
+# 创建项目目录
+PROJECT_DIR="/home/tradingagents-cn"
+mkdir -p $PROJECT_DIR
+cd $PROJECT_DIR
+
+echo -e "${YELLOW}创建项目目录: $PROJECT_DIR${NC}"
+
+# 创建 .env 配置文件
+cat > .env << 'EOF'
+# TradingAgents-CN Docker环境配置
+# 此文件专门用于Docker容器内的环境变量配置
+# 重要：API密钥已在此配置
+
+# ===== Docker环境标识 =====
+DOCKER_CONTAINER=true
+
+# ===== 必需的API密钥 =====
+
+# 🇨🇳 阿里百炼 API 密钥 (推荐，国产大模型，中文优化)
+# 已在此配置: sk-68ed54c06e434c108ee93cc6e482bb61
+DASHSCOPE_API_KEY=sk-68ed54c06e434c108ee93cc6e482bb61
+DASHSCOPE_ENABLED=true
+
+# 🤖 DeepSeek API 密钥 (推荐，性价比高)
+# 已在此配置: sk-a1c794ab1969492aa06f7d1177af0451
+DEEPSEEK_API_KEY=sk-a1c794ab1969492aa06f7d1177af0451
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_ENABLED=true
+
+# 📊 FinnHub API 密钥 (必需，用于获取金融数据)
+# 已在此配置: d3vh001r01qt2ctpo400d3vh001r01qt2ctpo40g
+FINNHUB_API_KEY=d3vh001r01qt2ctpo400d3vh001r01qt2ctpo40g
+
+# 🌐 OpenAI API 密钥 (可选，需要国外网络)
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_ENABLED=false
+
+# 🧠 文心一言（百度千帆）API 密钥
+QIANFAN_API_KEY=your_qianfan_api_key_here
+QIANFAN_ENABLED=false
+
+# 🔍 Google AI API 密钥 (可选，用于Gemini模型)
+GOOGLE_API_KEY=your_google_api_key_here
+GOOGLE_ENABLED=false
+
+# 🤖 Anthropic API 密钥 (可选，用于Claude模型)
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+ANTHROPIC_ENABLED=false
+
+# 🌐 OpenRouter API 密钥 (可选，聚合多个AI模型)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_ENABLED=false
+
+# 🤖 AI302 API 密钥 (可选)
+AI302_API_KEY=your_ai302_api_key_here
+AI302_ENABLED=false
+
+# 🇨🇳 硅基流动 API 密钥（可选）
+SILICONFLOW_API_KEY=your_siliconflow_api_key_here
+
+# 🔧 One API / New API（可选，自部署聚合平台）
+ONEAPI_API_KEY=your_oneapi_api_key_here
+ONEAPI_BASE_URL=http://localhost:3000/v1
+
+# 通用OpenAI兼容提供商 API 密钥 (用于自定义端点)
+CUSTOM_OPENAI_API_KEY=your-custom-openai-api-key
+
+# 📈 Tushare API Token（推荐，专业A股数据）- 本部署已禁用
+TUSHARE_TOKEN=your_tushare_token_here
+TUSHARE_ENABLED=false
+
+# ===== 代理配置 =====
+# 配置需要绕过代理的域名（国内数据源）
+NO_PROXY=localhost,127.0.0.1,eastmoney.com,push2.eastmoney.com,82.push2.eastmoney.com,82.push2delay.eastmoney.com,gtimg.cn,sinaimg.cn,api.tushare.pro,baostock.com
+
+# ===== 数据源配置 =====
+
+# 🎯 默认中国股票数据源 - 设置为AKShare
+DEFAULT_CHINA_DATA_SOURCE=akshare
+
+# Tushare权限等级配置（用于速率限制）
+TUSHARE_TIER=standard
+TUSHARE_RATE_LIMIT_SAFETY_MARGIN=0.8
+
+# ===== 在线工具配置 =====
+ONLINE_TOOLS_ENABLED=false
+ONLINE_NEWS_ENABLED=true
+REALTIME_DATA_ENABLED=true
+
+# ===== Reddit API 配置 (可选) =====
+REDDIT_CLIENT_ID=your_reddit_client_id_here
+REDDIT_CLIENT_SECRET=your_reddit_client_secret_here
+REDDIT_USER_AGENT=TradingAgents-CN/1.0
+
+# ===== 数据库配置 =====
+
+# 🔧 数据库启用开关 - 本部署已启用
+MONGODB_ENABLED=true
+REDIS_ENABLED=true
+
+# MongoDB配置（Docker环境使用服务名，带认证）
+MONGODB_HOST=mongodb
+MONGODB_PORT=27017
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=tradingagents123
+MONGODB_DATABASE=tradingagents
+MONGODB_AUTH_SOURCE=admin
+MONGODB_URL=mongodb://admin:tradingagents123@mongodb:27017/tradingagents?authSource=admin
+MONGO_URI=mongodb://admin:tradingagents123@mongodb:27017/tradingagents?authSource=admin
+MONGO_DB=tradingagents
+MONGODB_CONNECTION_STRING=mongodb://admin:tradingagents123@mongodb:27017/tradingagents?authSource=admin
+MONGODB_DATABASE_NAME=tradingagents
+USE_MONGODB_STORAGE=true
+
+# Redis配置（Docker环境使用服务名，带密码）
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=tradingagents123
+REDIS_DB=0
+REDIS_URL=redis://:tradingagents123@redis:6379/0
+REDIS_MAX_CONNECTIONS=50
+REDIS_RETRY_ON_TIMEOUT=true
+
+# MongoDB连接池配置
+MONGO_MAX_CONNECTIONS=100
+MONGO_MIN_CONNECTIONS=10
+# MongoDB超时参数（毫秒）- 用于处理大量历史数据
+MONGO_CONNECT_TIMEOUT_MS=30000
+MONGO_SOCKET_TIMEOUT_MS=60000
+MONGO_SERVER_SELECTION_TIMEOUT_MS=5000
+
+# ===== 安全配置 =====
+
+# 🔐 JWT配置 (用于用户认证)
+JWT_SECRET=docker-jwt-secret-key-change-in-production-2024
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=480
+REFRESH_TOKEN_EXPIRE_DAYS=30
+
+# CSRF保护
+CSRF_SECRET=docker-csrf-secret-key-change-in-production-2024
+BCRYPT_ROUNDS=12
+
+# ===== API服务配置 =====
+
+# 🚀 API服务基础配置
+HOST=0.0.0.0
+PORT=8000
+DEBUG=false
+
+# 历史兼容配置（已废弃，但保留兼容性）
+API_HOST=0.0.0.0
+API_PORT=8000
+API_DEBUG=false
+
+# 🔗 CORS配置
+ALLOWED_ORIGINS=["http://localhost:3000", "http://localhost:80", "http://localhost:8000"]
+ALLOWED_HOSTS=["*"]
+CORS_ORIGINS=*
+
+# 📊 队列和并发配置
+QUEUE_MAX_SIZE=10000
+QUEUE_VISIBILITY_TIMEOUT=300
+QUEUE_MAX_RETRIES=3
+
+# 并发控制
+DEFAULT_USER_CONCURRENT_LIMIT=3
+GLOBAL_CONCURRENT_LIMIT=50
+DEFAULT_DAILY_QUOTA=1000
+
+# Worker配置
+WORKER_HEARTBEAT_INTERVAL=30
+
+# 速率限制
+RATE_LIMIT_ENABLED=true
+DEFAULT_RATE_LIMIT=100
+
+# 📁 文件上传配置
+MAX_UPLOAD_SIZE=10485760
+UPLOAD_DIR=uploads
+
+# 📊 监控配置
+METRICS_ENABLED=true
+HEALTH_CHECK_INTERVAL=60
+
+# ===== 日志配置 =====
+TRADINGAGENTS_LOG_LEVEL=INFO
+TRADINGAGENTS_LOG_DIR=/app/logs
+TRADINGAGENTS_LOG_FILE=/app/logs/tradingagents.log
+LOG_LEVEL=INFO
+LOG_FORMAT="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_FILE=logs/tradingagents.log
+
+# ===== 数据目录配置 =====
+TRADINGAGENTS_DATA_DIR=/app/data
+TRADINGAGENTS_CACHE_DIR=/app/data/cache
+TRADINGAGENTS_SESSIONS_DIR=/app/data/sessions
+TRADINGAGENTS_LOGS_DIR=/app/data/logs
+TRADINGAGENTS_CONFIG_DIR=/app/data/config
+TRADINGAGENTS_TEMP_DIR=/app/data/temp
+TRADINGAGENTS_RESULTS_DIR=/app/data/analysis_results
+
+# ===== Python配置 =====
+# 禁用Python字节码生成 (可选，用于开发环境)
+PYTHONDONTWRITEBYTECODE=1
+
+# ===== 内存和缓存配置 =====
+# 🧠 内存功能启用开关 (默认启用)
+MEMORY_ENABLED=true
+
+# ===== 使用统计和成本跟踪配置 =====
+# 🔧 Token使用统计启用开关 (默认启用)
+ENABLE_COST_TRACKING=true
+
+# 💰 成本警告阈值 (人民币，默认100元)
+COST_ALERT_THRESHOLD=100.0
+
+# 📊 最大使用记录数量 (默认10000条)
+MAX_USAGE_RECORDS=10000
+
+# ===== 时区配置 =====
+TZ=Asia/Shanghai
+TIMEZONE=Asia/Shanghai
+
+# ===== 缓存配置 =====
+TA_USE_APP_CACHE=true
+CACHE_TTL=3600
+SCREENING_CACHE_TTL=1800
+SESSION_EXPIRE_HOURS=24
+
+# ===== 股票基础信息同步调度配置 =====
+SYNC_STOCK_BASICS_ENABLED=true
+SYNC_STOCK_BASICS_TIME=06:30
+
+# ===== 实时行情入库任务配置 =====
+# 港股交易时间：09:30-12:00, 13:00-16:00
+# 每4小时更新一次（降低请求频率，避免被封）
+QUOTES_INGEST_ENABLED=true
+QUOTES_INGEST_INTERVAL_SECONDS=14400
+
+# 启用接口轮换机制
+QUOTES_ROTATION_ENABLED=true
+
+# Tushare rt_k 接口每小时调用次数限制
+QUOTES_TUSHARE_HOURLY_LIMIT=2
+
+# 自动检测 Tushare rt_k 接口权限
+QUOTES_AUTO_DETECT_TUSHARE_PERMISSION=true
+
+# 休市期/启动兜底补数（填充上一笔收盘快照）
+QUOTES_BACKFILL_ON_STARTUP=true
+QUOTES_BACKFILL_ON_OFFHOURS=true
+
+# ===== Tushare数据同步服务配置 =====
+# Tushare统一数据同步总开关 - 已禁用
+TUSHARE_UNIFIED_ENABLED=false
+TUSHARE_BASIC_INFO_SYNC_ENABLED=false
+TUSHARE_BASIC_INFO_SYNC_CRON=0 2 * * *
+TUSHARE_QUOTES_SYNC_ENABLED=false
+TUSHARE_QUOTES_SYNC_CRON=*/1 9-15 * * 1-5
+TUSHARE_HISTORICAL_SYNC_ENABLED=false
+TUSHARE_HISTORICAL_SYNC_CRON=0 16 * * 1-5
+TUSHARE_FINANCIAL_SYNC_ENABLED=false
+TUSHARE_FINANCIAL_SYNC_CRON=0 3 * * 0
+TUSHARE_STATUS_CHECK_ENABLED=false
+TUSHARE_STATUS_CHECK_CRON=0 * * * *
+
+# 🚀 Tushare数据初始化配置
+TUSHARE_INIT_HISTORICAL_DAYS=365
+TUSHARE_INIT_BATCH_SIZE=100
+TUSHARE_INIT_AUTO_START=false
+
+# ===== AKShare数据同步服务配置 =====
+# AKShare统一数据同步总开关 - 已启用
+AKSHARE_UNIFIED_ENABLED=true
+# 基础信息同步 - 每天凌晨3点更新（休市时间）
+AKSHARE_BASIC_INFO_SYNC_ENABLED=true
+AKSHARE_BASIC_INFO_SYNC_CRON=0 3 * * *
+# 港股行情同步（交易时间每4小时更新一次，避开高峰）
+# 港股交易时间：09:30-12:00, 13:00-16:00
+# 安排在 10:00, 14:00 更新（交易时间内的相对安全时段）
+AKSHARE_QUOTES_SYNC_ENABLED=true
+AKSHARE_QUOTES_SYNC_CRON=0 10,14 * * 1-5
+# 历史数据同步（收盘后17点）
+AKSHARE_HISTORICAL_SYNC_ENABLED=true
+AKSHARE_HISTORICAL_SYNC_CRON=0 17 * * 1-5
+# 财务数据同步（按港股财报发布规律安排）
+# 一季度报（3-5月）- 每年3-5月每日凌晨4点同步
+AKSHARE_Q1_FINANCIAL_SYNC_ENABLED=true
+AKSHARE_Q1_FINANCIAL_SYNC_CRON=0 4 * 3-5 *
+# 半年报（8-9月）- 每年8-9月每日凌晨4点同步
+AKSHARE_Q2_FINANCIAL_SYNC_ENABLED=true
+AKSHARE_Q2_FINANCIAL_SYNC_CRON=0 4 * 8-9 *
+# 三季度报（10-11月）- 每年10-11月每日凌晨4点同步
+AKSHARE_Q3_FINANCIAL_SYNC_ENABLED=true
+AKSHARE_Q3_FINANCIAL_SYNC_CRON=0 4 * 10-11 *
+# 年报（3-4月）- 每年3-4月每日凌晨4点同步
+AKSHARE_ANNUAL_SYNC_ENABLED=true
+AKSHARE_ANNUAL_SYNC_CRON=0 4 * 3-4 *
+# 状态检查（每小时30分）
+AKSHARE_STATUS_CHECK_ENABLED=true
+AKSHARE_STATUS_CHECK_CRON=30 * * * *
+
+# 🚀 AKShare数据初始化配置
+AKSHARE_INIT_HISTORICAL_DAYS=365
+AKSHARE_INIT_BATCH_SIZE=100
+AKSHARE_INIT_AUTO_START=true
+
+# ===== 分析师数据获取配置 =====
+# 市场分析回溯天数（用于技术分析）
+MARKET_ANALYST_LOOKBACK_DAYS=365
+
+# ===== BaoStock数据同步服务配置 =====
+# BaoStock统一数据同步总开关 - 已禁用（主要服务A股）
+BAOSTOCK_UNIFIED_ENABLED=false
+BAOSTOCK_BASIC_INFO_SYNC_ENABLED=false
+BAOSTOCK_BASIC_INFO_SYNC_CRON=0 4 * * *
+BAOSTOCK_DAILY_QUOTES_SYNC_ENABLED=false
+BAOSTOCK_DAILY_QUOTES_SYNC_CRON=0 16 * * 1-5
+BAOSTOCK_QUOTES_SYNC_ENABLED=false
+BAOSTOCK_QUOTES_SYNC_CRON=*/15 9-15 * * 1-5
+BAOSTOCK_HISTORICAL_SYNC_ENABLED=false
+BAOSTOCK_HISTORICAL_SYNC_CRON=0 18 * * 1-5
+BAOSTOCK_STATUS_CHECK_ENABLED=false
+BAOSTOCK_STATUS_CHECK_CRON=45 * * * *
+
+# 🚀 BaoStock数据初始化配置
+BAOSTOCK_INIT_HISTORICAL_DAYS=365
+BAOSTOCK_INIT_BATCH_SIZE=50
+BAOSTOCK_INIT_AUTO_START=false
+
+# ===== 新闻数据同步服务配置 =====
+NEWS_SYNC_ENABLED=false
+NEWS_SYNC_CRON=0 */2 * * *
+NEWS_SYNC_HOURS_BACK=24
+NEWS_SYNC_MAX_PER_SOURCE=50
+
+# ===== 港股特定配置 =====
+# 港股交易日配置（港股与A股交易日基本一致，但需考虑时差和特殊安排）
+HKEX_TRADING_DAYS_ENABLED=true
+# 港股交易时间配置（北京时间）
+HKEX_OPEN_TIME_AM=09:30
+HKEX_CLOSE_TIME_AM=12:00
+HKEX_OPEN_TIME_PM=13:00
+HKEX_CLOSE_TIME_PM=16:00
+
+# 港股数据源优先级（针对港股股票）
+HKEX_DATA_SOURCE_PRIORITY=["akshare", "finnhub", "yahoo"]
+
+# 港股数据缓存配置（港股数据更新频率较低）
+HKEX_DATA_CACHE_TTL=7200
+HKEX_QUOTE_CACHE_TTL=3600
+
+# 港股指数同步配置
+HKEX_INDEX_SYNC_ENABLED=true
+HKEX_INDEX_SYNC_CRON=0 10,14,16 * * 1-5
+
+# 港股通数据同步（如果需要）
+HK_CONNECT_SYNC_ENABLED=false
+HK_CONNECT_SYNC_CRON=0 17 * * 1-5
+
+# 港股财报数据同步配置（按港股财报时间表）
+HKEX_Q1_REPORT_SYNC_MONTHS=3,4,5      # 一季度报发布月份
+HKEX_Q2_REPORT_SYNC_MONTHS=8,9        # 半年报发布月份
+HKEX_Q3_REPORT_SYNC_MONTHS=10,11      # 三季度报发布月份
+HKEX_ANNUAL_REPORT_SYNC_MONTHS=3,4    # 年报发布月份
+
+# 港股节假日配置（避免在港股休市日进行数据同步）
+HKEX_HOLIDAYS=["2024-01-01", "2024-02-10", "2024-02-11", "2024-02-12", "2024-04-10", "2024-05-01", "2024-06-10", "2024-07-01", "2024-09-17", "2024-10-01", "2024-12-25", "2024-12-26"]
+EOF
+
+echo -e "${GREEN}.env 配置文件创建完成（港股版）${NC}"
+
+# 创建 docker-compose.yml 文件（只暴露Web界面端口，内部服务无端口暴露）
+cat > docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:5.0
+    container_name: tradingagents_mongodb
+    restart: unless-stopped
+    # 不暴露端口，仅内部通信
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=tradingagents123
+    networks:
+      - tradingagents_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: tradingagents_redis
+    restart: unless-stopped
+    # 不暴露端口，仅内部通信
+    command: redis-server --requirepass tradingagents123
+    volumes:
+      - redis_data:/data
+    networks:
+      - tradingagents_network
+
+  tradingagents:
+    image: birdxs/tradingagents-cn:latest
+    container_name: tradingagents_app
+    restart: unless-stopped
+    ports:
+      - "8501:8501"  # 只暴露Web界面端口
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+    environment:
+      - DOCKER_CONTAINER=true
+      - MONGODB_ENABLED=true
+      - REDIS_ENABLED=true
+      - DEFAULT_CHINA_DATA_SOURCE=akshare
+      - AKSHARE_UNIFIED_ENABLED=true
+      - TUSHARE_ENABLED=false
+      - HKEX_TRADING_DAYS_ENABLED=true
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - tradingagents_network
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  tradingagents_network:
+    driver: bridge
+EOF
+
+echo -e "${GREEN}docker-compose.yml 文件创建完成（安全端口版）${NC}"
+
+# 创建启动脚本
+cat > start.sh << 'EOF'
+#!/bin/bash
+
+# TradingAgents-CN 启动脚本（港股版 - 安全端口）
+
+echo "正在启动 TradingAgents-CN（港股版 - 安全端口）..."
+
+# 拉取最新镜像
+echo "正在拉取最新镜像..."
+docker pull birdxs/tradingagents-cn:latest
+
+# 启动服务
+echo "正在启动服务..."
+docker-compose up -d
+
+echo "服务启动完成！"
+echo "Web界面访问地址: http://$(curl -s ifconfig.me):8501"
+echo "登录账号: admin"
+echo "登录密码: admin123"
+echo ""
+echo "查看服务状态: docker-compose ps"
+echo "查看日志: docker-compose logs -f tradingagents"
+EOF
+
+chmod +x start.sh
+
+echo -e "${GREEN}启动脚本创建完成${NC}"
+
+# 创建停止脚本
+cat > stop.sh << 'EOF'
+#!/bin/bash
+
+# TradingAgents-CN 停止脚本
+
+echo "正在停止 TradingAgents-CN..."
+docker-compose down
+echo "服务已停止"
+EOF
+
+chmod +x stop.sh
+
+echo -e "${GREEN}停止脚本创建完成${NC}"
+
+# 创建状态检查脚本
+cat > status.sh << 'EOF'
+#!/bin/bash
+
+# TradingAgents-CN 状态检查脚本
+
+echo "正在检查 TradingAgents-CN 服务状态..."
+docker-compose ps
+EOF
+
+chmod +x status.sh
+
+echo -e "${GREEN}状态检查脚本创建完成${NC}"
+
+# 创建日志查看脚本
+cat > logs.sh << 'EOF'
+#!/bin/bash
+
+# TradingAgents-CN 日志查看脚本
+
+echo "正在查看 TradingAgents-CN 日志..."
+docker-compose logs -f tradingagents
+EOF
+
+chmod +x logs.sh
+
+echo -e "${GREEN}日志查看脚本创建完成${NC}"
+
+# 创建安全端口配置说明脚本
+cat > security_info.sh << 'EOF'
+#!/bin/bash
+
+# TradingAgents-CN 安全端口配置说明
+
+echo "TradingAgents-CN 安全端口配置说明"
+echo "=================================="
+echo ""
+echo "1. 端口配置策略："
+echo "   - 只暴露8501端口（Web界面）给外部网络"
+echo "   - MongoDB和Redis服务不暴露端口（仅内部容器网络通信）"
+echo ""
+echo "2. 服务间通信："
+echo "   - 主应用(tradingagents)通过容器名连接mongodb和redis"
+echo "   - 使用内部网络tradingagents_network进行通信"
+echo ""
+echo "3. 安全优势："
+echo "   - 减少攻击面，提高系统安全性"
+echo "   - 数据库和缓存服务不会被外部直接访问"
+echo "   - 符合最小权限原则"
+echo ""
+echo "4. 港股优化配置："
+echo "   - 港股交易时间：09:30-12:00, 13:00-16:00"
+echo "   - 行情更新：每天10:00, 14:00"
+echo "   - 财报同步：按港股财报发布周期安排"
+echo "   - 低请求频率：每4小时更新，避免被封接口"
+EOF
+
+chmod +x security_info.sh
+
+echo -e "${GREEN}安全端口配置说明脚本创建完成${NC}"
+
+# 拉取镜像
+echo -e "${YELLOW}正在拉取 TradingAgents-CN 镜像...${NC}"
+docker pull birdxs/tradingagents-cn:latest
+
+# 启动服务
+echo -e "${YELLOW}正在启动服务...${NC}"
+docker-compose up -d
+
+echo -e "${GREEN}部署完成！（港股版 - 安全端口）${NC}"
+echo ""
+echo -e "${GREEN}访问地址: http://$(curl -s ifconfig.me):8501${NC}"
+echo -e "${GREEN}登录账号: admin${NC}"
+echo -e "${GREEN}登录密码: admin123${NC}"
+echo ""
+echo -e "${YELLOW}常用命令:${NC}"
+echo -e "${YELLOW}启动服务: ./start.sh${NC}"
+echo -e "${YELLOW}停止服务: ./stop.sh${NC}"
+echo -e "${YELLOW}查看状态: ./status.sh${NC}"
+echo -e "${YELLOW}查看日志: ./logs.sh${NC}"
+echo -e "${YELLOW}安全配置说明: ./security_info.sh${NC}"
+echo -e "${YELLOW}手动启动: docker-compose up -d${NC}"
+echo -e "${YELLOW}手动停止: docker-compose down${NC}"
+echo ""
+echo -e "${GREEN}API密钥已配置:${NC}"
+echo -e "${GREEN}- 阿里百炼 API: sk-68ed54c06e434c108ee93cc6e482bb61${NC}"
+echo -e "${GREEN}- DeepSeek V3 API: sk-a1c794ab1969492aa06f7d1177af0451${NC}"
+echo -e "${GREEN}- FinnHub API: d3vh001r01qt2ctpo400d3vh001r01qt2ctpo40g${NC}"
+echo -e "${GREEN}- 数据库: MongoDB 和 Redis 已启用（内部通信）${NC}"
+echo -e "${GREEN}- 数据源: AKShare 已启用（港股版时间安排）${NC}"
+echo -e "${GREEN}- Tushare: 已禁用${NC}"
+echo ""
+echo -e "${YELLOW}安全端口配置:${NC}"
+echo -e "${YELLOW}- 只暴露8501端口（Web界面）${NC}"
+echo -e "${YELLOW}- MongoDB和Redis无外部端口暴露${NC}"
+echo -e "${YELLOW}- 内部服务通过容器网络通信${NC}"
+echo -e "${YELLOW}- 提高安全性，减少攻击面${NC}"
+EOF
+
+这个安全端口版脚本的改进：
+
+1. **只暴露Web界面端口**：
+   - 只有tradingagents服务暴露8501端口给外部网络
+   - MongoDB和Redis服务不再暴露端口给外部
+
+2. **内部服务通信**：
+   - MongoDB和Redis通过内部容器网络与主应用通信
+   - 使用容器名作为主机名连接数据库和缓存
+
+3. **安全性提升**：
+   - 大幅减少攻击面
+   - 数据库和缓存服务不会被外部直接访问
+   - 符合安全最佳实践
+
+4. **保持港股优化配置**：
+   - 港股交易时间同步安排
+   - 按真实财报发布周期安排同步
+   - 低请求频率策略
+
+这样配置既满足了实际使用需求，又最大化地提高了系统安全性。
