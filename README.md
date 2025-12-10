@@ -50,14 +50,15 @@ bash scripts/deploy.sh
 # 1. 创建部署目录
 mkdir -p /home/tradingagents && cd /home/tradingagents
 
-# 2. 下载配置文件
+# 2. 下载配置文件（自动下载 .env 模板）
 curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml
+curl -sO https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker && mv .env.docker .env || touch .env
 
 # 3. 一键启动 (包含MongoDB + Redis + 应用)
 docker-compose up -d
 
 # 访问应用: http://你的服务器IP:8501
-# 首次访问在Web界面的"配置向导"中配置API密钥即可
+# API密钥在Web界面配置后自动保存到 .env 文件
 ```
 
 **包含的服务**:
@@ -66,8 +67,8 @@ docker-compose up -d
 - 🔴 **Redis** - 缓存 (自动配置)
 
 **提示**: 
-- 📁 所有数据保存在 `/home/tradingagents/` 目录
-- 🔑 首次访问时,在Web界面配置API密钥
+- 📁 所有数据和配置保存在 `/home/tradingagents/` 目录
+- 🔑 API密钥存储在 `.env` 文件中，容器重启后自动读取
 - 🔄 重启服务: `docker-compose restart`
 - 📋 查看日志: `docker-compose logs -f`
 - 🛑 停止服务: `docker-compose down`
