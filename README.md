@@ -207,12 +207,12 @@ ALPHA_VANTAGE_API_KEY=your-alpha-key      # 美股数据
 ### 目录结构
 
 ```
-TradingAgents-arm32/
-├── .env              # 配置文件 (自动创建)
-├── data/             # 分析结果
-├── logs/             # 日志文件
-├── cache/            # 缓存数据
-└── backups/          # 配置备份
+/home/tradingagents/          # 懒人部署目录
+├── docker-compose.yml        # 容器编排配置
+├── data/                     # 分析结果 (自动创建)
+├── logs/                     # 日志文件 (自动创建)
+├── cache/                    # 缓存数据 (自动创建)
+└── backups/                  # 配置备份 (自动创建)
 ```
 
 ### 常用命令
@@ -298,8 +298,8 @@ cd /home/tradingagents && docker-compose down -v --rmi all && cd / && rm -rf /ho
 - **前端**: Streamlit
 - **后端**: Python 3.11
 - **AI框架**: LangGraph
-- **数据库**: MongoDB (可选)
-- **缓存**: Redis (可选)
+- **数据库**: MongoDB (Docker部署自动配置)
+- **缓存**: Redis (Docker部署自动配置)
 - **容器**: Docker + Docker Compose
 
 ### 项目结构
