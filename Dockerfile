@@ -44,14 +44,15 @@ RUN useradd -m -u 1000 -s /bin/bash appuser
 # 设置工作目录
 WORKDIR /app
 
-# 从builder复制依赖
+# 从builder复制依赖到多个位置，确保无论以何种用户运行都能找到
+COPY --from=builder /root/.local /root/.local
 COPY --from=builder /root/.local /home/appuser/.local
 
 # 复制应用代码
 COPY --chown=appuser:appuser . .
 
-# 设置PATH
-ENV PATH=/home/appuser/.local/bin:$PATH
+# 设置PATH（同时支持root和appuser）
+ENV PATH=/root/.local/bin:/home/appuser/.local/bin:$PATH
 
 # 创建数据目录和配置文件
 RUN mkdir -p /app/data /app/logs /app/cache /app/backups && \
