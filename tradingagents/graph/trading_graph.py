@@ -973,13 +973,18 @@ class TradingAgentsGraph:
                     if len(chunk.get("messages", [])) > 0:
                         chunk["messages"][-1].pretty_print()
                     trace.append(chunk)
-                    final_state = chunk
+                    # 使用 deep_merge_state 避免覆盖之前的数据
+                    if final_state is None:
+                        final_state = chunk
+                    else:
+                        final_state = deep_merge_state(final_state, chunk)
 
             if not trace and final_state:
                 # updates 模式下，使用累积的状态
                 pass
             elif trace:
-                final_state = trace[-1]
+                # 使用 deep_merge_state 合并 trace 中的所有状态
+                final_state = trace[0] if len(trace) == 1 else deep_merge_state(final_state or {}, trace[-1])
         else:
             # Standard mode without tracing but with progress updates
             if progress_callback:
