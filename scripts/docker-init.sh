@@ -51,9 +51,9 @@ fi
 # 确保文件权限正确
 chmod 644 /app/.env
 
-# 确保备份目录存在
-mkdir -p /app/backups/config
-chmod 755 /app/backups/config
+# 确保备份目录存在（权限不足时只警告不退出）
+mkdir -p /app/backups/config 2>/dev/null || echo "⚠️  警告: 无法创建备份目录,备份功能可能受限"
+chmod 755 /app/backups/config 2>/dev/null || true
 
 echo "✅ 容器环境初始化完成"
 
