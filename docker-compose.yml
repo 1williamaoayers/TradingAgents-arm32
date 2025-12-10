@@ -47,7 +47,6 @@ services:
       - ./logs:/app/logs
       - ./cache:/app/cache
       - ./backups:/app/backups
-      - ./.env:/app/.env
     environment:
       - TZ=Asia/Shanghai
       - MONGODB_HOST=mongodb
@@ -75,3 +74,5 @@ volumes:
   data:
   logs:
   cache:
+
+

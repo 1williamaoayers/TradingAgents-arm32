@@ -51,10 +51,11 @@ mkdir -p /home/tradingagents && cd /home/tradingagents
 
 # 2. 下载配置文件
 curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker
 
 # 3. 启动服务
 docker-compose up -d
+
+# 首次访问 http://你的IP:8501 在Web界面配置API密钥
 ```
 
 ---
@@ -131,6 +132,11 @@ docker-compose up -d
 ### 备份数据
 ```bash
 tar -czf backup-$(date +%Y%m%d).tar.gz data/ logs/
+```
+
+### 完全卸载 (释放全部磁盘空间)
+```bash
+cd /home/tradingagents && docker-compose down -v --rmi all && cd / && rm -rf /home/tradingagents
 ```
 
 ---
