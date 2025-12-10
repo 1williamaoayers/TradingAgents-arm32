@@ -233,6 +233,9 @@ docker-compose restart
 # 更新应用
 docker-compose pull && docker-compose up -d
 
+# 🔄 完整重置部署 (删除旧数据和镜像,拉取最新版本)
+cd /home/tradingagents && docker-compose down -v --rmi all && rm -rf data logs cache backups && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && docker-compose pull && docker-compose up -d
+
 # ⚠️ 完全卸载 (删除所有数据、镜像、文件,释放全部磁盘空间)
 cd /home/tradingagents && docker-compose down -v --rmi all && cd / && rm -rf /home/tradingagents
 ```
