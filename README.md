@@ -46,20 +46,12 @@ bash scripts/deploy.sh
 
 **适用于**: 想要最快速度部署的用户
 
+**一键复制执行**（复制下面整行）:
 ```bash
-# 1. 创建部署目录
-mkdir -p /home/tradingagents && cd /home/tradingagents
-
-# 2. 下载配置文件（自动下载 .env 模板）
-curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml
-curl -sO https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker && mv .env.docker .env || touch .env
-
-# 3. 一键启动 (包含MongoDB + Redis + 应用)
-docker-compose up -d
-
-# 访问应用: http://你的服务器IP:8501
-# API密钥在Web界面配置后自动保存到 .env 文件
+mkdir -p /home/tradingagents && cd /home/tradingagents && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && curl -sO https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker && mv .env.docker .env && docker-compose up -d
 ```
+
+完成后访问: `http://你的服务器IP:8501`
 
 **包含的服务**:
 - 🐳 **TradingAgents** - 主应用 (端口8501)
