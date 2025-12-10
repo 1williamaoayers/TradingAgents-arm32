@@ -38,6 +38,32 @@ from .reflection import Reflector
 from .signal_processing import SignalProcessor
 
 
+def deep_merge_state(base: dict, update: dict) -> dict:
+    """递归合并两个字典，确保嵌套字典也被正确合并而非覆盖
+    
+    Args:
+        base: 基础字典
+        update: 要合并的更新字典
+    
+    Returns:
+        合并后的字典
+    """
+    if base is None:
+        return update.copy() if update else {}
+    if update is None:
+        return base.copy() if base else {}
+    
+    result = base.copy()
+    for key, value in update.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            # 递归合并嵌套字典
+            result[key] = deep_merge_state(result[key], value)
+        else:
+            # 直接覆盖（包括非字典值）
+            result[key] = value
+    return result
+
+
 def create_llm_by_provider(provider: str, model: str, backend_url: str, temperature: float, max_tokens: int, timeout: int, api_key: str = None):
     """
     根据 provider 创建对应的 LLM 实例
@@ -938,7 +964,7 @@ class TradingAgentsGraph:
                     for node_name, node_update in chunk.items():
                         if not node_name.startswith('__'):
                             if isinstance(node_update, dict):
-                                final_state.update(node_update)
+                                final_state = deep_merge_state(final_state, node_update)
                             else:
                                 logger.debug(f"跳过非字典类型的node_update: {type(node_update)}")
                                 pass
@@ -984,7 +1010,7 @@ class TradingAgentsGraph:
                     for node_name, node_update in chunk.items():
                         if not node_name.startswith('__'):
                             if isinstance(node_update, dict):
-                                final_state.update(node_update)
+                                final_state = deep_merge_state(final_state, node_update)
                             else:
                                 logger.debug(f"跳过非字典类型的node_update: {type(node_update)}")
                                 pass
@@ -1015,7 +1041,7 @@ class TradingAgentsGraph:
                     for node_name, node_update in chunk.items():
                         if not node_name.startswith('__'):
                             if isinstance(node_update, dict):
-                                final_state.update(node_update)
+                                final_state = deep_merge_state(final_state, node_update)
                             else:
                                 logger.debug(f"跳过非字典类型的node_update: {type(node_update)}")
                                 pass
