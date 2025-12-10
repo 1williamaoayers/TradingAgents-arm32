@@ -43,6 +43,22 @@ chmod +x scripts/deploy.sh
 
 ---
 
+### 🎯 更简单的方式 (不需要克隆仓库)
+
+```bash
+# 1. 创建部署目录
+mkdir -p /home/tradingagents && cd /home/tradingagents
+
+# 2. 下载配置文件
+curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker
+
+# 3. 启动服务
+docker-compose up -d
+```
+
+---
+
 ## 🌐 访问应用
 
 部署完成后,在浏览器中访问:
