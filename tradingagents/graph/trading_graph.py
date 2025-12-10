@@ -983,8 +983,14 @@ class TradingAgentsGraph:
                 # updates 模式下，使用累积的状态
                 pass
             elif trace:
-                # 使用 deep_merge_state 合并 trace 中的所有状态
-                final_state = trace[0] if len(trace) == 1 else deep_merge_state(final_state or {}, trace[-1])
+                # 遍历 trace 中的所有状态，使用 deep_merge_state 逐个合并
+                if len(trace) == 1:
+                    final_state = trace[0]
+                else:
+                    # 从第一个状态开始，逐个深度合并
+                    final_state = trace[0]
+                    for chunk in trace[1:]:
+                        final_state = deep_merge_state(final_state, chunk)
         else:
             # Standard mode without tracing but with progress updates
             if progress_callback:
