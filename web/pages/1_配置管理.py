@@ -18,7 +18,7 @@ def render_config_management():
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("🧙 配置向导", use_container_width=True):
-            st.switch_page("pages/config_wizard.py")
+            st.switch_page("pages/2_配置向导.py")
     
     with col2:
         if st.button("🔄 刷新", use_container_width=True):
@@ -125,7 +125,7 @@ def render_config_management():
         
         if st.button("配置MongoDB", key="config_mongodb"):
             st.session_state.config_step = 3
-            st.switch_page("pages/config_wizard.py")
+            st.switch_page("pages/2_配置向导.py")
     
     # Redis
     with st.expander("Redis", expanded=config["databases"]["redis"]["enabled"]):
@@ -140,7 +140,7 @@ def render_config_management():
         
         if st.button("配置Redis", key="config_redis"):
             st.session_state.config_step = 3
-            st.switch_page("pages/config_wizard.py")
+            st.switch_page("pages/2_配置向导.py")
     
     st.markdown("---")
     
@@ -159,7 +159,7 @@ def render_config_management():
     
     if st.button("修改系统配置"):
         st.session_state.config_step = 4
-        st.switch_page("pages/config_wizard.py")
+        st.switch_page("pages/2_配置向导.py")
 
 
 if __name__ == "__main__":

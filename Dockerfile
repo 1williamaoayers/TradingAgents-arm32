@@ -77,4 +77,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 ENTRYPOINT ["/app/docker-init.sh"]
 
 # 启动命令
-CMD ["streamlit", "run", "web/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "web/主页.py", "--server.port=8501", "--server.address=0.0.0.0"]

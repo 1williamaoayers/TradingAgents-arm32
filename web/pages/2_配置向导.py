@@ -473,7 +473,7 @@ def render_completion():
     with col2:
         if st.button("开始使用 →", use_container_width=True):
             # 跳转到主页
-            st.switch_page("app.py")
+            st.switch_page("主页.py")
 
 
 if __name__ == "__main__":

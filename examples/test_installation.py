@@ -171,7 +171,7 @@ class InstallationTester:
         print("🌐 检查Web应用...")
         
         web_files = [
-            ('web/app.py', 'Streamlit主应用'),
+            ('web/主页.py', 'Streamlit主应用'),
             ('web/components/sidebar.py', '侧边栏组件'),
             ('start_web.py', '启动脚本')
         ]

@@ -93,7 +93,7 @@ cp .env.docker .env
 # 编辑.env文件,填入API密钥
 
 # 3. 启动应用
-streamlit run web/app.py
+streamlit run web/主页.py
 ```
 
 ---
