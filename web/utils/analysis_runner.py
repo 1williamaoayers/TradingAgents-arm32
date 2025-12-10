@@ -368,12 +368,12 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
             logger.info(f"🌐 [SiliconFlow] 使用模型: {llm_model}")
             logger.info(f"🌐 [SiliconFlow] API端点: https://api.siliconflow.cn/v1")
         elif llm_provider == "custom_openai":
-            # 自定义OpenAI端点
-            custom_base_url = st.session_state.get("custom_openai_base_url", "https://api.openai.com/v1")
+            # 自定义OpenAI端点（从环境变量或配置中获取）
+            custom_base_url = os.getenv("CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1")
             config["backend_url"] = custom_base_url
             config["custom_openai_base_url"] = custom_base_url
-            logger.info(f"🔧 [自定义OpenAI] 使用模型: {llm_model}")
-            logger.info(f"🔧 [自定义OpenAI] API端点: {custom_base_url}")
+            logger.info(f"[自定义OpenAI] 使用模型: {llm_model}")
+            logger.info(f"[自定义OpenAI] API端点: {custom_base_url}")
 
         # 修复路径问题 - 优先使用环境变量配置
         # 数据目录：优先使用环境变量，否则使用默认路径
@@ -625,14 +625,14 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
 def format_analysis_results(results):
     """格式化分析结果用于显示"""
     
-    if not results['success']:
+    if not results.get('success', False):
         return {
-            'error': results['error'],
+            'error': results.get('error', '未知错误'),
             'success': False
         }
     
-    state = results['state']
-    decision = results['decision']
+    state = results.get('state', {})
+    decision = results.get('decision', {})
 
     # 提取关键信息
     # decision 可能是字符串（如 "BUY", "SELL", "HOLD"）或字典
@@ -1202,7 +1202,7 @@ def generate_demo_results_deprecated(stock_symbol, analysis_date, analysts, rese
 
 ### 📊 决策摘要
 - **投资建议**: **{action}**
-- **置信度**: {confidence:.1%}
+- **置信度**: {demo_decision['confidence']:.1%}
 - **风险评级**: 中等风险
 - **预期收益**: {'10-20%' if action == '买入' else '规避损失' if action == '卖出' else '稳健持有'}
 
