@@ -48,21 +48,21 @@ WORKDIR /app
 COPY --from=builder /root/.local /root/.local
 COPY --from=builder /root/.local /home/appuser/.local
 
-# 复制应用代码
-COPY --chown=appuser:appuser . .
-
 # 设置PATH（同时支持root和appuser）
 ENV PATH=/root/.local/bin:/home/appuser/.local/bin:$PATH
 
-# 创建数据目录和配置文件
+# 创建数据目录和配置文件（这些层很少变动，放在COPY代码之前）
 RUN mkdir -p /app/data /app/logs /app/cache /app/backups && \
     touch /app/.env && \
     chown -R appuser:appuser /app && \
     chmod 644 /app/.env
 
-# 复制初始化脚本
-COPY --chown=appuser:appuser scripts/docker-init.sh /app/
-RUN chmod +x /app/docker-init.sh
+# 复制应用代码（这是最常变动的层，放在最后）
+COPY --chown=appuser:appuser . .
+
+# 复制初始化脚本并设置权限
+# 注意：虽然COPY . .已经包含了scripts目录，但为了确保权限正确，再次显式设置
+RUN chmod +x /app/scripts/docker-init.sh
 
 # 切换到应用用户
 USER appuser
@@ -75,7 +75,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
 # 使用初始化脚本作为入口点
-ENTRYPOINT ["/app/docker-init.sh"]
+ENTRYPOINT ["/app/scripts/docker-init.sh"]
 
 # 启动Streamlit应用
 CMD ["python", "-m", "streamlit", "run", "web/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
