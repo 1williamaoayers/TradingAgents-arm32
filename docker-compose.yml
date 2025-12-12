@@ -39,7 +39,7 @@ services:
     container_name: tradingagents
     restart: unless-stopped
     user: root
-    entrypoint: /app/docker-init.sh
+    entrypoint: /app/scripts/docker-init.sh
     ports:
       - "8501:8501"
     volumes:
