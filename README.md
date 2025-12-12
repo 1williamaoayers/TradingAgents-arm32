@@ -22,13 +22,33 @@
 
 ## 🚀 快速开始
 
+### 方式1: Docker一键部署 (推荐)
+
+**适用于**: VPS、NAS、本地服务器
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/1williamaoayers/TradingAgents-arm32.git
+cd TradingAgents-arm32
+
+# 2. 一键部署
+bash scripts/deploy.sh
+
+# 3. 访问应用
+# 浏览器打开: http://localhost:8501
+```
+
+**就这么简单!** 🎉
+
+---
+
 ### 🎯 懒人一键部署 (超简单!)
 
 **适用于**: 想要最快速度部署的用户
 
 **一键复制执行**（复制下面整行）:
 ```bash
-mkdir -p /home/tradingagents && cd /home/tradingagents && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && curl -L -o .env "https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker" && docker-compose up -d
+mkdir -p /home/tradingagents && cd /home/tradingagents && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && curl -sO https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker && mv .env.docker .env && docker-compose up -d
 ```
 
 完成后访问: `http://你的服务器IP:8501`
@@ -51,6 +71,22 @@ mkdir -p /home/tradingagents && cd /home/tradingagents && curl -O https://raw.gi
 docker exec -it tradingagents python scripts/test-database-connection.py
 
 # 看到 "🎉 所有测试通过!" 就表示数据库连接正常
+```
+
+---
+
+### 方式2: 本地运行
+
+```bash
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 配置环境变量
+cp .env.docker .env
+# 编辑.env文件,填入API密钥
+
+# 3. 启动应用
+streamlit run web/主页.py
 ```
 
 ---
@@ -191,10 +227,10 @@ docker-compose restart
 docker-compose pull && docker-compose up -d
 
 # 🔄 完整重置部署 (删除旧数据和镜像,拉取最新版本)
-mkdir -p /home/tradingagents && cd /home/tradingagents && (docker-compose down 2>/dev/null || true) && rm -rf data logs cache backups docker-compose.yml .env && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && curl -L -o .env "https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker" && docker-compose pull && docker-compose up -d
+cd /home/tradingagents && docker-compose down -v --rmi all && rm -rf data logs cache backups && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && docker-compose pull && docker-compose up -d
 
 # ⚠️ 完全卸载 (删除所有数据、镜像、文件,释放全部磁盘空间)
-cd /home/tradingagents && (docker-compose down -v --rmi all 2>/dev/null || true) && cd / && rm -rf /home/tradingagents
+cd /home/tradingagents && docker-compose down -v --rmi all && cd / && rm -rf /home/tradingagents
 ```
 
 ---

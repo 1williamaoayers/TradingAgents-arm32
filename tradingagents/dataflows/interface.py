@@ -938,23 +938,7 @@ def get_YFin_data(
 
 def get_stock_news_openai(ticker, curr_date):
     config = get_config()
-    
-    # Determine API key based on provider
-    provider = config.get("llm_provider", "").lower()
-    api_key = None
-    
-    if "deepseek" in provider:
-        api_key = config.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-    elif "dashscope" in provider or "阿里百炼" in provider:
-        api_key = config.get("DASHSCOPE_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-    elif "openai" in provider:
-        api_key = config.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    
-    # Fallback to OPENAI_API_KEY if not found (for compatibility)
-    if not api_key:
-        api_key = os.getenv("OPENAI_API_KEY")
-
-    client = OpenAI(base_url=config["backend_url"], api_key=api_key)
+    client = OpenAI(base_url=config["backend_url"])
 
     response = client.responses.create(
         model=config["quick_think_llm"],
@@ -989,23 +973,7 @@ def get_stock_news_openai(ticker, curr_date):
 
 def get_global_news_openai(curr_date):
     config = get_config()
-    
-    # Determine API key based on provider
-    provider = config.get("llm_provider", "").lower()
-    api_key = None
-    
-    if "deepseek" in provider:
-        api_key = config.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-    elif "dashscope" in provider or "阿里百炼" in provider:
-        api_key = config.get("DASHSCOPE_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-    elif "openai" in provider:
-        api_key = config.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    
-    # Fallback to OPENAI_API_KEY if not found (for compatibility)
-    if not api_key:
-        api_key = os.getenv("OPENAI_API_KEY")
-
-    client = OpenAI(base_url=config["backend_url"], api_key=api_key)
+    client = OpenAI(base_url=config["backend_url"])
 
     response = client.responses.create(
         model=config["quick_think_llm"],
@@ -1391,23 +1359,8 @@ def _get_fundamentals_openai_impl(ticker, curr_date, config, cache):
     """
     try:
         logger.debug(f"📊 [OpenAI] 尝试使用OpenAI获取 {ticker} 的基本面数据...")
-        
-        # Determine API key based on provider
-        provider = config.get("llm_provider", "").lower()
-        api_key = None
-        
-        if "deepseek" in provider:
-            api_key = config.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-        elif "dashscope" in provider or "阿里百炼" in provider:
-            api_key = config.get("DASHSCOPE_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-        elif "openai" in provider:
-            api_key = config.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        
-        # Fallback to OPENAI_API_KEY if not found (for compatibility)
-        if not api_key:
-            api_key = os.getenv("OPENAI_API_KEY")
 
-        client = OpenAI(base_url=config["backend_url"], api_key=api_key)
+        client = OpenAI(base_url=config["backend_url"])
 
         response = client.responses.create(
             model=config["quick_think_llm"],

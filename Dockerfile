@@ -75,7 +75,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
 # 使用初始化脚本作为入口点
-ENTRYPOINT ["/app/scripts/docker-init.sh"]
+ENTRYPOINT ["/app/docker-init.sh"]
 
 # 启动Streamlit应用
 CMD ["python", "-m", "streamlit", "run", "web/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
