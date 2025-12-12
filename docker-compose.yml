@@ -39,7 +39,7 @@ services:
     container_name: tradingagents
     restart: unless-stopped
     user: root
-    entrypoint: ["/bin/bash", "-c", "chmod +x /app/docker-init.sh && sed -i 's/\r$//' /app/docker-init.sh && /app/docker-init.sh"]
+    entrypoint: /app/scripts/docker-init.sh
     ports:
       - "8501:8501"
     volumes:

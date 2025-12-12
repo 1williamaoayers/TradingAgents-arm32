@@ -18,7 +18,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     build-essential \
-    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================
@@ -63,9 +62,7 @@ RUN mkdir -p /app/data /app/logs /app/cache /app/backups && \
 
 # 复制初始化脚本
 COPY --chown=appuser:appuser scripts/docker-init.sh /app/
-# 修复脚本格式（处理Windows换行符）并赋予执行权限
-RUN dos2unix /app/docker-init.sh && \
-    chmod +x /app/docker-init.sh
+RUN chmod +x /app/docker-init.sh
 
 # 切换到应用用户
 USER appuser
