@@ -39,7 +39,7 @@ services:
     container_name: tradingagents
     restart: unless-stopped
     user: root
-    entrypoint: ["python", "-m", "streamlit", "run", "web/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    entrypoint: /app/scripts/docker-init.sh
     ports:
       - "8501:8501"
     volumes:
