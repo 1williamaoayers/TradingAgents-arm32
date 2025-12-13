@@ -1309,7 +1309,7 @@ class Toolkit:
     def get_stock_sentiment_unified(
         ticker: Annotated[str, "股票代码（支持A股、港股、美股）"],
         curr_date: Annotated[str, "当前日期，格式：YYYY-MM-DD"]
-    ) -> str:
+    ) -> dict:
         """
         统一的股票情绪分析工具
         自动识别股票类型（A股、港股、美股）并调用相应的情绪数据源
@@ -1319,172 +1319,24 @@ class Toolkit:
             curr_date: 当前日期（格式：YYYY-MM-DD）
 
         Returns:
-            str: 情绪分析报告
+            dict: 情绪分析报告
         """
-        logger.info(f"😊 [统一情绪工具] 分析股票: {ticker}")
-
         try:
-            from tradingagents.utils.stock_utils import StockUtils
-
-            # 自动识别股票类型
-            market_info = StockUtils.get_market_info(ticker)
-            is_china = market_info['is_china']
-            is_hk = market_info['is_hk']
-            is_us = market_info['is_us']
-
-            logger.info(f"😊 [统一情绪工具] 股票类型: {market_info['market_name']}")
-
-            result_data = []
-
-            if is_china or is_hk:
-                # 中国A股和港股：使用Serper API搜索雪球和股吧
-                logger.info(f"🇨🇳🇭🇰 [统一情绪工具] 使用Serper搜索中文市场情绪...")
-                
-                try:
-                    import requests
-                    import os
-                    import json
-                    import re
-                    
-                    serper_api_key = os.getenv("SERPER_API_KEY")
-                    if not serper_api_key:
-                        raise ValueError("未配置SERPER_API_KEY")
-                        
-                    # 处理股票名称
-                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '').replace('.HK', '')
-                    stock_name = market_info.get('name', '').replace('港股', '').replace('A股', '')
-                    
-                    if not stock_name or stock_name == ticker:
-                        # 尝试获取中文名称
-                        try:
-                            if is_hk:
-                                from tradingagents.dataflows.interface import get_hk_stock_info_unified
-                                info = get_hk_stock_info_unified(ticker)
-                            else:
-                                from tradingagents.dataflows.interface import get_china_stock_info_unified
-                                info = get_china_stock_info_unified(ticker)
-                            
-                            if isinstance(info, dict) and 'name' in info:
-                                stock_name = info['name']
-                        except:
-                            pass
-                    
-                    # 再次清理名称
-                    if stock_name:
-                        stock_name = stock_name.replace('港股', '').replace('A股', '')
-                        # 去除常见的后缀和冗余词
-                        stock_name = re.sub(r'(集团|股份|有限公司|－.*|-.*|\(.*\)|（.*）)', '', stock_name)
-                        stock_name = stock_name.strip()
-                    
-                    # 构造 Google Dorks 查询
-                    base_query = f'"{clean_ticker}"'
-                    if stock_name and stock_name != ticker:
-                        base_query += f' "{stock_name}"'
-                    
-                    search_query = f'{base_query} 走势 观点 site:xueqiu.com OR site:guba.eastmoney.com'
-                    logger.info(f"🔍 [Serper] 搜索Query: {search_query}")
-                    
-                    url = "https://google.serper.dev/search"
-                    headers = {
-                        'X-API-KEY': serper_api_key,
-                        'Content-Type': 'application/json'
-                    }
-                    
-                    def perform_search(query):
-                        payload = json.dumps({
-                            "q": query,
-                            "tbs": "qdr:d",
-                            "num": 20
-                        })
-                        response = requests.request("POST", url, headers=headers, data=payload)
-                        return response.json().get('organic', [])
-
-                    organic_results = perform_search(search_query)
-                    
-                    # 如果没有结果，尝试放宽查询条件
-                    if not organic_results:
-                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，尝试放宽查询条件...")
-                        search_query = f'{base_query} site:xueqiu.com OR site:guba.eastmoney.com'
-                        logger.info(f"🔍 [Serper] 搜索Query (Fallback): {search_query}")
-                        organic_results = perform_search(search_query)
-                    
-                    if organic_results:
-                        discussions = []
-                        for item in organic_results:
-                            title = item.get('title', '')
-                            snippet = item.get('snippet', '')
-                            source = item.get('link', '')
-                            
-                            platform = "未知"
-                            if "xueqiu.com" in source:
-                                platform = "雪球"
-                            elif "eastmoney.com" in source:
-                                platform = "股吧"
-                                
-                            discussions.append(f"- [{platform}] **{title}**: {snippet}")
-                        
-                        discussion_text = "\n".join(discussions)
-                        
-                        sentiment_summary = f"""
-## 中文市场散户情绪分析 (Serper搜索结果)
-
-**股票**: {ticker} ({stock_name})
-**分析日期**: {curr_date} (最近24小时)
-
-### 散户讨论热点
-{discussion_text}
-
-### 情绪综述
-基于上述搜索结果，请LLM自行总结投资者情绪（乐观/悲观/中性）及主要关注点。
-"""
-                        result_data.append(sentiment_summary)
-                        logger.info(f"✅ [Serper] 成功获取 {len(organic_results)} 条散户讨论")
-                    else:
-                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，返回默认中性JSON以防止LLM重试")
-                        return json.dumps({
-                            "sentiment": "Neutral",
-                            "score": 0.5,
-                            "summary": "【系统提示】由于中文社交媒体数据源暂未接通，暂无实时情绪数据。此为占位结果，请勿基于此进行交易决策。",
-                            "confidence": "low"
-                        }, ensure_ascii=False)
-
-                except Exception as e:
-                    logger.error(f"❌ [Serper] 搜索失败: {e}")
-                    return json.dumps({
-                        "sentiment": "Neutral",
-                        "score": 0.5,
-                        "summary": "【系统提示】由于中文社交媒体数据源暂未接通，暂无实时情绪数据。此为占位结果，请勿基于此进行交易决策。",
-                        "confidence": "low"
-                    }, ensure_ascii=False)
-
-            else:
-                # 美股：使用Reddit情绪分析
-                logger.info(f"🇺🇸 [统一情绪工具] 处理美股情绪...")
-
-                try:
-                    from tradingagents.dataflows.interface import get_reddit_sentiment
-
-                    sentiment_data = get_reddit_sentiment(ticker, curr_date)
-                    result_data.append(f"## 美股Reddit情绪\n{sentiment_data}")
-                except Exception as e:
-                    result_data.append(f"## 美股Reddit情绪\n获取失败: {e}")
-
-            # 组合所有数据
-            combined_result = f"""# {ticker} 情绪分析
-
-**股票类型**: {market_info['market_name']}
-**分析日期**: {curr_date}
-
-{chr(10).join(result_data)}
-
----
-*数据来源: 根据股票类型自动选择最适合的情绪数据源*
-"""
-
-            logger.info(f"😊 [统一情绪工具] 数据获取完成，总长度: {len(combined_result)}")
-            return combined_result
-
+            # 委托给统一新闻工具处理，确保逻辑一致性
+            from tradingagents.tools.unified_news_tool import UnifiedNewsAnalyzer
+            
+            # 创建分析器实例 (不需要toolkit，因为此方法不使用其他工具)
+            analyzer = UnifiedNewsAnalyzer(None)
+            
+            # 调用统一实现
+            return analyzer.get_stock_sentiment_unified(ticker, curr_date)
+            
         except Exception as e:
             error_msg = f"统一情绪分析工具执行失败: {str(e)}"
             logger.error(f"❌ [统一情绪工具] {error_msg}")
-            return error_msg
+            return {
+                "status": "error",
+                "error": str(e),
+                "content": error_msg,
+                "summary": error_msg
+            }

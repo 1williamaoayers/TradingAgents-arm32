@@ -575,7 +575,8 @@ class UnifiedNewsAnalyzer:
                         logger.info(f"✅ [Serper] 成功获取 {len(organic_results)} 条散户讨论")
                     else:
                         logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，返回默认中性Dict")
-                        response_dict["summary"] = "【系统提示】由于中文社交媒体数据源暂未接通，暂无实时情绪数据。此为占位结果，请勿基于此进行交易决策。"
+                        response_dict["summary"] = f"当前暂无股票 {ticker} 的详细中文社交媒体数据，系统默认给予中性评级。请以市场客观指标为准。"
+                        response_dict["company_name_check"] = f"请严格基于股票代码 {ticker} 确认公司名称，禁止臆测"
                         return response_dict
 
                 except Exception as e:
