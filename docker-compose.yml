@@ -42,11 +42,7 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./cache:/app/cache
-      - ./backups:/app/backups
-      - ./.env:/app/.env:rw
+      - .:/app
     environment:
       - TZ=Asia/Shanghai
       - MONGODB_HOST=mongodb

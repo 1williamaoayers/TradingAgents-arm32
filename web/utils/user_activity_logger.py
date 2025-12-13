@@ -39,7 +39,10 @@ class UserActivityLogger:
     
     def __init__(self):
         self.activity_dir = Path(__file__).parent.parent / "data" / "user_activities"
-        self.activity_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.activity_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"⚠️ 无法创建用户活动记录目录 {self.activity_dir}: {e}")
         
         # 线程锁，确保文件写入安全
         self._lock = threading.Lock()

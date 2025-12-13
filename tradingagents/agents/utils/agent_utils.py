@@ -8,6 +8,7 @@ from datetime import date, timedelta, datetime
 import functools
 import pandas as pd
 import os
+import re
 from dateutil.relativedelta import relativedelta
 from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
@@ -697,7 +698,7 @@ class Toolkit:
         start_date: Annotated[str, "开始日期，格式：YYYY-MM-DD"] = None,
         end_date: Annotated[str, "结束日期，格式：YYYY-MM-DD"] = None,
         curr_date: Annotated[str, "当前日期，格式：YYYY-MM-DD"] = None
-    ) -> str:
+    ) -> dict:
         """
         统一的股票基本面分析工具
         自动识别股票类型（A股、港股、美股）并调用相应的数据源
@@ -710,7 +711,7 @@ class Toolkit:
             curr_date: 当前日期（可选，格式：YYYY-MM-DD）
 
         Returns:
-            str: 基本面分析数据和报告
+            dict: 基本面分析数据和报告
         """
         logger.info(f"📊 [统一基本面工具] 分析股票: {ticker}")
 
@@ -1031,12 +1032,21 @@ class Toolkit:
             
             logger.info(f"📊 [统一基本面工具] ===== 数据获取摘要结束 =====")
             
-            return combined_result
+            return {
+                "report": combined_result,
+                "ticker": ticker,
+                "market": market_info['market_name'],
+                "status": "success"
+            }
 
         except Exception as e:
             error_msg = f"统一基本面分析工具执行失败: {str(e)}"
             logger.error(f"❌ [统一基本面工具] {error_msg}")
-            return error_msg
+            return {
+                "status": "error",
+                "error": str(e),
+                "report": error_msg
+            }
 
     @staticmethod
     @tool
@@ -1045,7 +1055,7 @@ class Toolkit:
         ticker: Annotated[str, "股票代码（支持A股、港股、美股）"],
         start_date: Annotated[str, "开始日期，格式：YYYY-MM-DD。注意：系统会自动扩展到配置的回溯天数（通常为365天），你只需要传递分析日期即可"],
         end_date: Annotated[str, "结束日期，格式：YYYY-MM-DD。通常与start_date相同，传递当前分析日期即可"]
-    ) -> str:
+    ) -> dict:
         """
         统一的股票市场数据工具
         自动识别股票类型（A股、港股、美股）并调用相应的数据源获取价格和技术指标数据
@@ -1059,7 +1069,7 @@ class Toolkit:
             end_date: 结束日期（格式：YYYY-MM-DD）。传递当前分析日期即可
 
         Returns:
-            str: 市场数据和技术分析报告
+            dict: 市场数据和技术分析报告
 
         示例：
             如果分析日期是 2025-11-09，传递：
@@ -1143,12 +1153,21 @@ class Toolkit:
 """
 
             logger.info(f"📈 [统一市场工具] 数据获取完成，总长度: {len(combined_result)}")
-            return combined_result
+            return {
+                "report": combined_result,
+                "ticker": ticker,
+                "market": market_info['market_name'],
+                "status": "success"
+            }
 
         except Exception as e:
             error_msg = f"统一市场数据工具执行失败: {str(e)}"
             logger.error(f"❌ [统一市场工具] {error_msg}")
-            return error_msg
+            return {
+                "status": "error",
+                "error": str(e),
+                "report": error_msg
+            }
 
     @staticmethod
     @tool
@@ -1318,33 +1337,125 @@ class Toolkit:
             result_data = []
 
             if is_china or is_hk:
-                # 中国A股和港股：使用社交媒体情绪分析
-                logger.info(f"🇨🇳🇭🇰 [统一情绪工具] 处理中文市场情绪...")
-
+                # 中国A股和港股：使用Serper API搜索雪球和股吧
+                logger.info(f"🇨🇳🇭🇰 [统一情绪工具] 使用Serper搜索中文市场情绪...")
+                
                 try:
-                    # 可以集成微博、雪球、东方财富等中文社交媒体情绪
-                    # 目前使用基础的情绪分析
-                    sentiment_summary = f"""
-## 中文市场情绪分析
+                    import requests
+                    import os
+                    import json
+                    import re
+                    
+                    serper_api_key = os.getenv("SERPER_API_KEY")
+                    if not serper_api_key:
+                        raise ValueError("未配置SERPER_API_KEY")
+                        
+                    # 处理股票名称
+                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '').replace('.HK', '')
+                    stock_name = market_info.get('name', '').replace('港股', '').replace('A股', '')
+                    
+                    if not stock_name or stock_name == ticker:
+                        # 尝试获取中文名称
+                        try:
+                            if is_hk:
+                                from tradingagents.dataflows.interface import get_hk_stock_info_unified
+                                info = get_hk_stock_info_unified(ticker)
+                            else:
+                                from tradingagents.dataflows.interface import get_china_stock_info_unified
+                                info = get_china_stock_info_unified(ticker)
+                            
+                            if isinstance(info, dict) and 'name' in info:
+                                stock_name = info['name']
+                        except:
+                            pass
+                    
+                    # 再次清理名称
+                    if stock_name:
+                        stock_name = stock_name.replace('港股', '').replace('A股', '')
+                        # 去除常见的后缀和冗余词
+                        stock_name = re.sub(r'(集团|股份|有限公司|－.*|-.*|\(.*\)|（.*）)', '', stock_name)
+                        stock_name = stock_name.strip()
+                    
+                    # 构造 Google Dorks 查询
+                    base_query = f'"{clean_ticker}"'
+                    if stock_name and stock_name != ticker:
+                        base_query += f' "{stock_name}"'
+                    
+                    search_query = f'{base_query} 走势 观点 site:xueqiu.com OR site:guba.eastmoney.com'
+                    logger.info(f"🔍 [Serper] 搜索Query: {search_query}")
+                    
+                    url = "https://google.serper.dev/search"
+                    headers = {
+                        'X-API-KEY': serper_api_key,
+                        'Content-Type': 'application/json'
+                    }
+                    
+                    def perform_search(query):
+                        payload = json.dumps({
+                            "q": query,
+                            "tbs": "qdr:d",
+                            "num": 20
+                        })
+                        response = requests.request("POST", url, headers=headers, data=payload)
+                        return response.json().get('organic', [])
 
-**股票**: {ticker} ({market_info['market_name']})
-**分析日期**: {curr_date}
+                    organic_results = perform_search(search_query)
+                    
+                    # 如果没有结果，尝试放宽查询条件
+                    if not organic_results:
+                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，尝试放宽查询条件...")
+                        search_query = f'{base_query} site:xueqiu.com OR site:guba.eastmoney.com'
+                        logger.info(f"🔍 [Serper] 搜索Query (Fallback): {search_query}")
+                        organic_results = perform_search(search_query)
+                    
+                    if organic_results:
+                        discussions = []
+                        for item in organic_results:
+                            title = item.get('title', '')
+                            snippet = item.get('snippet', '')
+                            source = item.get('link', '')
+                            
+                            platform = "未知"
+                            if "xueqiu.com" in source:
+                                platform = "雪球"
+                            elif "eastmoney.com" in source:
+                                platform = "股吧"
+                                
+                            discussions.append(f"- [{platform}] **{title}**: {snippet}")
+                        
+                        discussion_text = "\n".join(discussions)
+                        
+                        sentiment_summary = f"""
+## 中文市场散户情绪分析 (Serper搜索结果)
 
-### 市场情绪概况
-- 由于中文社交媒体情绪数据源暂未完全集成，当前提供基础分析
-- 建议关注雪球、东方财富、同花顺等平台的讨论热度
-- 港股市场还需关注香港本地财经媒体情绪
+**股票**: {ticker} ({stock_name})
+**分析日期**: {curr_date} (最近24小时)
 
-### 情绪指标
-- 整体情绪: 中性
-- 讨论热度: 待分析
-- 投资者信心: 待评估
+### 散户讨论热点
+{discussion_text}
 
-*注：完整的中文社交媒体情绪分析功能正在开发中*
+### 情绪综述
+基于上述搜索结果，请LLM自行总结投资者情绪（乐观/悲观/中性）及主要关注点。
 """
-                    result_data.append(sentiment_summary)
+                        result_data.append(sentiment_summary)
+                        logger.info(f"✅ [Serper] 成功获取 {len(organic_results)} 条散户讨论")
+                    else:
+                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，返回默认中性JSON以防止LLM重试")
+                        return json.dumps({
+                            "sentiment": "Neutral",
+                            "score": 0.5,
+                            "summary": "【系统提示】由于中文社交媒体数据源暂未接通，暂无实时情绪数据。此为占位结果，请勿基于此进行交易决策。",
+                            "confidence": "low"
+                        }, ensure_ascii=False)
+
                 except Exception as e:
-                    result_data.append(f"## 中文市场情绪\n获取失败: {e}")
+                    logger.error(f"❌ [Serper] 搜索失败: {e}")
+                    return json.dumps({
+                        "sentiment": "Neutral",
+                        "score": 0.5,
+                        "summary": "【系统提示】由于中文社交媒体数据源暂未接通，暂无实时情绪数据。此为占位结果，请勿基于此进行交易决策。",
+                        "confidence": "low"
+                    }, ensure_ascii=False)
 
             else:
                 # 美股：使用Reddit情绪分析

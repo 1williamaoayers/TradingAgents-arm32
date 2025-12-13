@@ -188,7 +188,17 @@ class TradingAgentsLogger:
         # 创建日志目录
         if self.config['handlers']['file']['enabled']:
             log_dir = Path(self.config['handlers']['file']['directory'])
-            log_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                # 如果无法创建目录（如权限问题），则禁用文件日志
+                print(f"⚠️  警告: 无法创建日志目录 {log_dir} ({e})，将禁用文件日志。")
+                self.config['handlers']['file']['enabled'] = False
+                # 同时禁用其他依赖文件的日志处理器
+                if 'error' in self.config['handlers']:
+                    self.config['handlers']['error']['enabled'] = False
+                if 'structured' in self.config['handlers']:
+                    self.config['handlers']['structured']['enabled'] = False
         
         # 设置根日志级别
         root_logger = logging.getLogger()

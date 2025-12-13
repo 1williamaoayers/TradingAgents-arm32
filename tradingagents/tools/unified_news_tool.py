@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import json
+import requests
 """
 统一新闻分析工具
 整合A股、港股、美股等不同市场的新闻获取逻辑到一个工具函数中
@@ -22,7 +24,7 @@ class UnifiedNewsAnalyzer:
         """
         self.toolkit = toolkit
         
-    def get_stock_news_unified(self, stock_code: str, max_news: int = 10, model_info: str = "") -> str:
+    def get_stock_news_unified(self, stock_code: str, max_news: int = 10, model_info: str = "") -> dict:
         """
         统一新闻获取接口
         根据股票代码自动识别股票类型并获取相应新闻
@@ -33,7 +35,7 @@ class UnifiedNewsAnalyzer:
             model_info: 当前使用的模型信息，用于特殊处理
             
         Returns:
-            str: 格式化的新闻内容
+            dict: 包含新闻内容和元数据的字典
         """
         logger.info(f"[统一新闻工具] 开始获取 {stock_code} 的新闻，模型: {model_info}")
         logger.info(f"[统一新闻工具] 🤖 当前模型信息: {model_info}")
@@ -44,25 +46,32 @@ class UnifiedNewsAnalyzer:
         
         # 根据股票类型调用相应的获取方法
         if stock_type == "A股":
-            result = self._get_a_share_news(stock_code, max_news, model_info)
+            result_str = self._get_a_share_news(stock_code, max_news, model_info)
         elif stock_type == "港股":
-            result = self._get_hk_share_news(stock_code, max_news, model_info)
+            result_str = self._get_hk_share_news(stock_code, max_news, model_info)
         elif stock_type == "美股":
-            result = self._get_us_share_news(stock_code, max_news, model_info)
+            result_str = self._get_us_share_news(stock_code, max_news, model_info)
         else:
             # 默认使用A股逻辑
-            result = self._get_a_share_news(stock_code, max_news, model_info)
+            result_str = self._get_a_share_news(stock_code, max_news, model_info)
         
         # 🔍 添加详细的结果调试日志
-        logger.info(f"[统一新闻工具] 📊 新闻获取完成，结果长度: {len(result)} 字符")
-        logger.info(f"[统一新闻工具] 📋 返回结果预览 (前1000字符): {result[:1000]}")
+        logger.info(f"[统一新闻工具] 📊 新闻获取完成，结果长度: {len(result_str)} 字符")
+        logger.info(f"[统一新闻工具] 📋 返回结果预览 (前1000字符): {result_str[:1000]}")
         
         # 如果结果为空或过短，记录警告
-        if not result or len(result.strip()) < 50:
+        if not result_str or len(result_str.strip()) < 50:
             logger.warning(f"[统一新闻工具] ⚠️ 返回结果异常短或为空！")
-            logger.warning(f"[统一新闻工具] 📝 完整结果内容: '{result}'")
+            logger.warning(f"[统一新闻工具] 📝 完整结果内容: '{result_str}'")
         
-        return result
+        # 构造返回字典
+        return {
+            "status": "success" if result_str and len(result_str) > 50 else "warning",
+            "content": result_str,
+            "stock_type": stock_type,
+            "ticker": stock_code,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
     
     def _identify_stock_type(self, stock_code: str) -> str:
         """识别股票类型"""
@@ -410,6 +419,215 @@ class UnifiedNewsAnalyzer:
         
         return "❌ 无法获取港股新闻数据，所有新闻源均不可用"
     
+    def get_stock_sentiment_unified(
+        self,
+        ticker: str,
+        curr_date: str
+    ) -> dict:
+        """
+        统一的股票情绪分析工具
+        自动识别股票类型（A股、港股、美股）并调用相应的情绪数据源
+        对于A股和港股，使用Serper API抓取雪球和股吧的真实散户评论
+
+        Args:
+            ticker: 股票代码（如：000001、0700.HK、AAPL）
+            curr_date: 当前日期（格式：YYYY-MM-DD）
+
+        Returns:
+            dict: 包含情绪分析报告和元数据的字典
+        """
+        logger.info(f"😊 [统一情绪工具] 分析股票: {ticker}")
+
+        try:
+            from tradingagents.utils.stock_utils import StockUtils
+
+            # 自动识别股票类型
+            market_info = StockUtils.get_market_info(ticker)
+            is_china = market_info['is_china']
+            is_hk = market_info['is_hk']
+            is_us = market_info['is_us']
+
+            logger.info(f"😊 [统一情绪工具] 股票类型: {market_info['market_name']}")
+
+            result_data = []
+            
+            # 初始化默认返回字典
+            response_dict = {
+                "ticker": ticker,
+                "stock_type": market_info['market_name'],
+                "date": curr_date,
+                "sentiment": "Neutral",
+                "score": 0.5,
+                "summary": "分析中...",
+                "confidence": "low",
+                "content": ""
+            }
+
+            if is_china or is_hk:
+                # 中国A股和港股：使用Serper API搜索雪球和股吧
+                logger.info(f"🇨🇳🇭🇰 [统一情绪工具] 使用Serper搜索中文市场情绪...")
+                
+                try:
+                    import requests
+                    import os
+                    import re
+                    
+                    serper_api_key = os.getenv("SERPER_API_KEY")
+                    if not serper_api_key:
+                        raise ValueError("未配置SERPER_API_KEY")
+                        
+                    # 处理股票名称
+                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '').replace('.HK', '')
+                    stock_name = market_info.get('name', '').replace('港股', '').replace('A股', '')
+                    
+                    if not stock_name or stock_name == ticker:
+                        # 尝试获取中文名称
+                        try:
+                            if is_hk:
+                                from tradingagents.dataflows.interface import get_hk_stock_info_unified
+                                info = get_hk_stock_info_unified(ticker)
+                            else:
+                                from tradingagents.dataflows.interface import get_china_stock_info_unified
+                                info = get_china_stock_info_unified(ticker)
+                            
+                            if isinstance(info, dict) and 'name' in info:
+                                stock_name = info['name']
+                        except:
+                            pass
+                    
+                    # 再次清理名称 (防止带有"港股"前缀)
+                    if stock_name:
+                        stock_name = stock_name.replace('港股', '').replace('A股', '')
+                        # 去除常见的后缀和冗余词 (如：京东集团-SW -> 京东)
+                        # 1. 先进行NFKC标准化，将全角字符转为半角
+                        import unicodedata
+                        stock_name = unicodedata.normalize('NFKC', stock_name)
+                        # 2. 去除集团、股份等后缀，以及 -SW, -W 等后缀
+                        stock_name = re.sub(r'(集团|股份|有限公司|－.*|-.*|\(.*\)|（.*）)', '', stock_name)
+                        stock_name = stock_name.strip()
+                    
+                    # 构造 Google Dorks 查询 (雪球 + 股吧)
+                    base_query = f'"{clean_ticker}"'
+                    if stock_name and stock_name != ticker:
+                        base_query += f' "{stock_name}"'
+                    
+                    search_query = f'{base_query} 走势 观点 site:xueqiu.com OR site:guba.eastmoney.com'
+                    logger.info(f"🔍 [Serper] 搜索Query: {search_query}")
+                    
+                    url = "https://google.serper.dev/search"
+                    headers = {
+                        'X-API-KEY': serper_api_key,
+                        'Content-Type': 'application/json'
+                    }
+                    
+                    def perform_search(query):
+                        payload = json.dumps({
+                            "q": query,
+                            "tbs": "qdr:d",  # 过去24小时
+                            "num": 20        # 获取更多结果
+                        })
+                        response = requests.request("POST", url, headers=headers, data=payload)
+                        return response.json().get('organic', [])
+
+                    organic_results = perform_search(search_query)
+                    
+                    # 如果没有结果，尝试放宽查询条件 (去掉"走势 观点")
+                    if not organic_results:
+                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，尝试放宽查询条件...")
+                        search_query = f'{base_query} site:xueqiu.com OR site:guba.eastmoney.com'
+                        logger.info(f"🔍 [Serper] 搜索Query (Fallback): {search_query}")
+                        organic_results = perform_search(search_query)
+                    
+                    if organic_results:
+                        discussions = []
+                        for item in organic_results:
+                            title = item.get('title', '')
+                            snippet = item.get('snippet', '')
+                            source = item.get('link', '')
+                            
+                            # 识别来源平台
+                            platform = "未知"
+                            if "xueqiu.com" in source:
+                                platform = "雪球"
+                            elif "eastmoney.com" in source:
+                                platform = "股吧"
+                                
+                            discussions.append(f"- [{platform}] **{title}**: {snippet}")
+                        
+                        discussion_text = "\n".join(discussions)
+                        
+                        sentiment_summary = f"""
+## 中文市场散户情绪分析 (Serper搜索结果)
+
+**股票**: {ticker} ({stock_name})
+**分析日期**: {curr_date} (最近24小时)
+
+### 散户讨论热点
+{discussion_text}
+
+### 情绪综述
+基于上述搜索结果，请LLM自行总结投资者情绪（乐观/悲观/中性）及主要关注点。
+"""
+                        result_data.append(sentiment_summary)
+                        response_dict["content"] = sentiment_summary
+                        response_dict["status"] = "success"
+                        response_dict["source"] = "Serper/Google"
+                        logger.info(f"✅ [Serper] 成功获取 {len(organic_results)} 条散户讨论")
+                    else:
+                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，返回默认中性Dict")
+                        response_dict["summary"] = "【系统提示】由于中文社交媒体数据源暂未接通，暂无实时情绪数据。此为占位结果，请勿基于此进行交易决策。"
+                        return response_dict
+
+                except Exception as e:
+                    logger.error(f"❌ [Serper] 搜索失败: {e}")
+                    response_dict["summary"] = f"【系统提示】情绪分析失败: {str(e)}"
+                    response_dict["status"] = "error"
+                    response_dict["error"] = str(e)
+                    return response_dict
+
+            else:
+                # 美股：使用Reddit情绪分析
+                logger.info(f"🇺🇸 [统一情绪工具] 处理美股情绪...")
+
+                try:
+                    from tradingagents.dataflows.interface import get_reddit_sentiment
+
+                    sentiment_data = get_reddit_sentiment(ticker, curr_date)
+                    result_data.append(f"## 美股Reddit情绪\n{sentiment_data}")
+                    response_dict["content"] = sentiment_data
+                    response_dict["source"] = "Reddit"
+                    response_dict["status"] = "success"
+                except Exception as e:
+                    result_data.append(f"## 美股Reddit情绪\n获取失败: {e}")
+                    response_dict["content"] = f"## 美股Reddit情绪\n获取失败: {e}"
+                    response_dict["status"] = "error"
+
+            # 组合所有数据
+            combined_result = f"""# {ticker} 情绪分析
+
+**股票类型**: {market_info['market_name']}
+**分析日期**: {curr_date}
+
+{chr(10).join(result_data)}
+
+---
+*数据来源: Serper (Google Search) / Reddit*
+"""
+            response_dict["content"] = combined_result
+            
+            logger.info(f"😊 [统一情绪工具] 数据获取完成，总长度: {len(combined_result)}")
+            return response_dict
+
+        except Exception as e:
+            error_msg = f"统一情绪分析工具执行失败: {str(e)}"
+            logger.error(f"❌ [统一情绪工具] {error_msg}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "ticker": ticker,
+                "content": error_msg
+            }
+
     def _get_us_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
         """获取美股新闻"""
         logger.info(f"[统一新闻工具] 获取美股 {stock_code} 新闻")
@@ -585,4 +803,33 @@ def create_unified_news_tool(toolkit):
 - 支持Google模型的特殊长度控制
 """
     
-    return get_stock_news_unified
+    def get_stock_sentiment_unified(ticker: str, curr_date: str) -> str:
+        """
+        统一的股票情绪分析工具
+        自动识别股票类型（A股、港股、美股）并调用相应的情绪数据源
+        
+        Args:
+            ticker: 股票代码
+            curr_date: 当前日期
+            
+        Returns:
+            str: 格式化的情绪分析内容
+        """
+        if not ticker:
+            return "❌ 错误: 未提供股票代码"
+            
+        return analyzer.get_stock_sentiment_unified(ticker, curr_date)
+    
+    # 设置工具属性
+    get_stock_sentiment_unified.name = "get_stock_sentiment_unified"
+    get_stock_sentiment_unified.description = """
+统一股票情绪分析工具 - 根据股票代码自动获取相应市场的情绪数据
+
+功能:
+- 自动识别股票类型（A股/港股/美股）
+- 港股/A股: 使用Serper搜索雪球/股吧的散户讨论
+- 美股: 使用Reddit/Twitter情绪数据
+- 返回格式化的情绪分析报告
+"""
+
+    return get_stock_news_unified, get_stock_sentiment_unified

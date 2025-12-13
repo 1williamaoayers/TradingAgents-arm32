@@ -302,9 +302,7 @@ class TradingAgentsGraph:
             "social": ToolNode(
                 [
                     # online tools
-                    self.toolkit.get_stock_news_openai,
-                    # offline tools
-                    self.toolkit.get_reddit_stock_info,
+                    self.toolkit.get_stock_sentiment_unified,
                 ]
             ),
             "news": ToolNode(

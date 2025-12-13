@@ -49,7 +49,7 @@ EOF
 fi
 
 # 确保文件权限正确
-chmod 644 /app/.env
+chmod 644 /app/.env || echo "⚠️  警告: 无法修改 .env 权限，跳过..."
 
 # 确保备份目录存在（权限不足时只警告不退出）
 mkdir -p /app/backups/config 2>/dev/null || echo "⚠️  警告: 无法创建备份目录,备份功能可能受限"

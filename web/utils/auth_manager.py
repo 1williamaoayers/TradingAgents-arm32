@@ -52,11 +52,14 @@ class AuthManager:
                 }
             }
             
-            with open(self.users_file, 'w', encoding='utf-8') as f:
-                json.dump(default_users, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"✅ 用户认证系统初始化完成")
-            logger.info(f"📁 用户配置文件: {self.users_file}")
+            try:
+                with open(self.users_file, 'w', encoding='utf-8') as f:
+                    json.dump(default_users, f, indent=2, ensure_ascii=False)
+                
+                logger.info(f"✅ 用户认证系统初始化完成")
+                logger.info(f"📁 用户配置文件: {self.users_file}")
+            except Exception as e:
+                logger.warning(f"⚠️ 无法创建默认用户配置文件 {self.users_file}: {e}，将使用内存临时配置")
     
     def _inject_auth_cache_js(self):
         """注入前端认证缓存JavaScript代码"""
