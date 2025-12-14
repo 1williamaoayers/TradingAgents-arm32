@@ -480,6 +480,29 @@ class UnifiedNewsAnalyzer:
                     clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '').replace('.HK', '')
                     stock_name = market_info.get('name', '').replace('港股', '').replace('A股', '')
                     
+                    # 【安全锁】使用局部变量，默认为 Ticker，防止查库失败导致变量缺失
+                    real_name = clean_ticker
+                    
+                    # 尝试从数据库获取真实公司名
+                    try:
+                        # 【关键】局部引用，防止 Circular Import 导致全站崩溃
+                        from tradingagents.dataflows.interface import get_stock_name_by_ticker
+                        
+                        # 尝试查询
+                        name_from_db = get_stock_name_by_ticker(clean_ticker)
+                        if name_from_db:
+                            real_name = name_from_db
+                            logger.info(f"[统一情绪工具] ✅ 从数据库获取到公司名: {real_name}")
+                        else:
+                            logger.info(f"[统一情绪工具] ⚠️ 未在数据库中找到 {clean_ticker} 的公司名，使用代码: {real_name}")
+                    except Exception as e:
+                        # 【关键】静默失败：如有任何报错，直接忽略，仅打印警告，保证程序继续运行
+                        logger.warning(f"[统一情绪工具] ⚠️ 从数据库获取公司名失败，使用股票代码: {clean_ticker}，错误: {e}")
+                        real_name = clean_ticker
+                    
+                    # 使用 real_name 替代原来的 stock_name 变量
+                    stock_name = real_name
+                    
                     if not stock_name or stock_name == ticker:
                         # 尝试获取中文名称
                         try:

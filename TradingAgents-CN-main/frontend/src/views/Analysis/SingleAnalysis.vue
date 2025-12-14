@@ -596,13 +596,21 @@
                   <h4>📋 详细分析报告</h4>
 
                   <!-- 美观的标签页展示 -->
-                  <div class="analysis-tabs-container">
+                  <div 
+                    class="analysis-tabs-container"
+                    ref="tabsContainer"
+                    @mousedown="startDrag"
+                    @mousemove="onDrag"
+                    @mouseup="stopDrag"
+                    @mouseleave="stopDrag"
+                  >
                     <el-tabs
                       v-model="activeReportTab"
                       type="card"
                       class="analysis-tabs"
                       tab-position="top"
                       :key="analysisResults?.id || 'default'"
+                      @mousedown.native="onTabClick"
                     >
                       <el-tab-pane
                         v-for="(report, key) in getAnalysisReports(analysisResults)"
@@ -2168,6 +2176,46 @@ const applyRecommendedModels = () => {
   }
 }
 
+// 标签页拖拽滚动相关
+const tabsContainer = ref<HTMLElement | null>(null)
+const isDragging = ref(false)
+const startX = ref(0)
+const scrollLeft = ref(0)
+
+// 开始拖拽
+const startDrag = (e: MouseEvent) => {
+  if (!tabsContainer.value) return
+  
+  isDragging.value = true
+  startX.value = e.pageX - tabsContainer.value.offsetLeft
+  scrollLeft.value = tabsContainer.value.scrollLeft
+  
+  // 防止文本选择
+  e.preventDefault()
+}
+
+// 拖拽中
+const onDrag = (e: MouseEvent) => {
+  if (!isDragging.value || !tabsContainer.value) return
+  
+  const x = e.pageX - tabsContainer.value.offsetLeft
+  const walk = (x - startX.value) * 2 // 乘以2增加滚动速度
+  tabsContainer.value.scrollLeft = scrollLeft.value - walk
+}
+
+// 停止拖拽
+const stopDrag = () => {
+  isDragging.value = false
+}
+
+// 处理标签点击，防止与拖拽冲突
+const onTabClick = (e: Event) => {
+  if (isDragging.value) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+}
+
 // 监听分析深度变化
 import { watch } from 'vue'
 watch(() => analysisForm.researchDepth, () => {
@@ -3189,12 +3237,88 @@ onMounted(async () => {
 /* 分析报告标签页样式 */
 .analysis-tabs-container {
   margin-top: 16px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  user-select: none;
+  
+  /* Standard scrollbar for non-WebKit browsers */
+  scrollbar-width: 12px;  /* For Firefox */
+  scrollbar-color: #888 #f1f1f1;  /* thumb and track color for Firefox */
+  
+  /* WebKit scrollbar styling */
+  &::-webkit-scrollbar {
+    height: 12px;
+    width: 12px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background-color: #888;
+    border-radius: 6px;
+    border: 2px solid #f1f1f1;
+    
+    &:hover {
+      background-color: #666;
+    }
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 6px;
+  }
+  
+  &::-webkit-scrollbar-corner {
+    background: #f1f1f1;
+  }
+  
+  /* 拖拽时的样式 */
+  &.dragging {
+    cursor: grabbing;
+    user-select: none;
+    
+    * {
+      cursor: grabbing !important;
+      user-select: none;
+    }
+  }
 }
 
 .analysis-tabs {
+  min-width: 100%;
+  width: max-content;
   /* 标签页头部样式 */
   :deep(.el-tabs__header) {
     margin: 0 0 20px 0;
+    background: var(--el-fill-color-light);
+    border-radius: 8px;
+    padding: 4px;
+    display: inline-flex;
+    min-width: 100%;
+    /* Ensure tabs don't wrap */
+    flex-wrap: nowrap;
+    /* Allow horizontal scrolling */
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* Hide scrollbar */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  :deep(.el-tabs__header)::-webkit-scrollbar {
+    display: none;
+    height: 0;  /* Optional: make it completely invisible */
+  }
+
+  /* Keep existing styles below */
+  :deep(.el-tabs__nav-wrap) {
+    margin-bottom: 0;
+  }
+
+  :deep(.el-tabs__header) {
     background: var(--el-fill-color-light);
     padding: 12px;
     border-radius: 15px;
