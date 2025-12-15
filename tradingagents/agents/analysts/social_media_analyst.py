@@ -108,10 +108,10 @@ def create_social_media_analyst(llm, toolkit):
         company_name = _get_company_name_for_social_media(ticker, market_info)
         logger.info(f"[社交媒体分析师] 公司名称: {company_name}")
 
-        # 统一使用 get_stock_sentiment_unified 工具
-        # 该工具内部会自动识别股票类型并调用相应的情绪数据源
-        logger.info(f"[社交媒体分析师] 使用统一情绪分析工具，自动识别股票类型")
-        tools = [toolkit.get_stock_sentiment_unified]
+        # 🔥 使用新的统一情绪分析工具（Alpha Vantage）
+        logger.info(f"[社交媒体分析师] 使用Alpha Vantage情绪分析工具")
+        from tradingagents.dataflows.tools.sentiment_tools import get_combined_sentiment
+        tools = [get_combined_sentiment]
 
         system_message = (
             """您是一位专业的中国市场社交媒体和投资情绪分析师，负责分析中国投资者对特定股票的讨论和情绪变化。
@@ -214,12 +214,82 @@ def create_social_media_analyst(llm, toolkit):
                 analyst_name="社交媒体分析师"
             )
         else:
-            # 非Google模型的处理逻辑
-            logger.debug(f"📊 [DEBUG] 非Google模型 ({llm.__class__.__name__})，使用标准处理逻辑")
+            # 非Google模型的处理逻辑（完整版本，从market_analyst复制）
+            logger.info(f"📊 [社交媒体分析师] 非Google模型 ({llm.__class__.__name__})，使用标准处理逻辑")
             
-            report = ""
+            # 处理情绪分析报告
             if len(result.tool_calls) == 0:
+                # 没有工具调用，直接使用LLM的回复
                 report = result.content
+                logger.info(f"📊 [社交媒体分析师] ✅ 直接回复（无工具调用），长度: {len(report)}")
+            else:
+                # 有工具调用，执行工具并生成完整分析报告
+                logger.info(f"📊 [社交媒体分析师] 🔧 检测到工具调用: {[call.get('name', 'unknown') for call in result.tool_calls]}")
+
+                try:
+                    # 执行工具调用
+                    from langchain_core.messages import ToolMessage, HumanMessage
+
+                    tool_messages = []
+                    for tool_call in result.tool_calls:
+                        tool_name = tool_call.get('name')
+                        tool_args = tool_call.get('args', {})
+                        tool_id = tool_call.get('id')
+
+                        logger.info(f"📊 [社交媒体分析师] 执行工具: {tool_name}, 参数: {tool_args}")
+
+                        # 找到对应的工具并执行
+                        tool_result = None
+                        for tool in tools:
+                            # 安全地获取工具名称进行比较
+                            current_tool_name = None
+                            if hasattr(tool, 'name'):
+                                current_tool_name = tool.name
+                            elif hasattr(tool, '__name__'):
+                                current_tool_name = tool.__name__
+
+                            if current_tool_name == tool_name:
+                                try:
+                                    tool_result = tool.invoke(tool_args)
+                                    logger.info(f"📊 [社交媒体分析师] 工具执行成功，结果长度: {len(str(tool_result))}")
+                                    break
+                                except Exception as tool_error:
+                                    logger.error(f"❌ [社交媒体分析师] 工具执行失败: {tool_error}")
+                                    tool_result = f"工具执行失败: {str(tool_error)}"
+
+                        if tool_result is None:
+                            tool_result = f"未找到工具: {tool_name}"
+
+                        # 创建工具消息
+                        tool_message = ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_id
+                        )
+                        tool_messages.append(tool_message)
+
+                    logger.info(f"📊 [社交媒体分析师] 工具执行完成，共{len(tool_messages)}个结果")
+
+                    # 将工具结果添加到消息历史
+                    updated_messages = state["messages"] + [result] + tool_messages
+
+                    # 要求LLM基于工具结果生成最终报告
+                    logger.info(f"📊 [社交媒体分析师] 要求LLM生成最终报告...")
+                    final_prompt = ChatPromptTemplate.from_messages([
+                        ("system", "你是一位专业的社交媒体和投资情绪分析师。请基于工具返回的数据，生成一份完整的市场情绪分析报告。"),
+                        MessagesPlaceholder(variable_name="messages"),
+                        ("human", "请基于上述工具数据，生成完整的市场情绪分析报告。")
+                    ])
+
+                    final_chain = final_prompt | llm
+                    final_result = final_chain.invoke({"messages": updated_messages})
+                    report = final_result.content
+                    logger.info(f"📊 [社交媒体分析师] ✅ 最终报告生成完成，长度: {len(report)}")
+
+                except Exception as e:
+                    logger.error(f"❌ [社交媒体分析师] 工具调用处理失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    report = f"情绪分析失败: {str(e)}"
 
         # 🔧 更新工具调用计数器
         return {
