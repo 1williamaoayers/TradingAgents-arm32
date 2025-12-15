@@ -152,12 +152,16 @@ class ConfigManager:
             # 重载环境变量
             self._reload_env()
             
+            # 🔥 自动同步LLM配置到MongoDB（针对小白用户开箱即用）
+            if key in ["DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "OPENAI_API_KEY"]:
+                self._sync_llm_config_to_mongodb()
+            
             # 记录审计日志
             self._log_config_change(user, "update", key)
             
             return {
                 "success": True,
-                "message": "配置已保存",
+                "message": "配置已保存并同步到数据库",
                 "backup_created": True
             }
         except Exception as e:
@@ -400,6 +404,92 @@ class ConfigManager:
                 f.write(f"{timestamp} | {user} | {action} | {key}\n")
         except Exception as e:
             logger.error(f"审计日志写入失败: {e}")
+    
+    def _sync_llm_config_to_mongodb(self):
+        """同步LLM配置到MongoDB数据库（开箱即用功能）"""
+        try:
+            from pymongo import MongoClient
+            
+            # 从环境变量读取MongoDB连接信息
+            mongo_uri = os.getenv("MONGODB_CONNECTION_STRING") or \
+                       f"mongodb://{os.getenv('MONGODB_USERNAME', 'admin')}:" \
+                       f"{os.getenv('MONGODB_PASSWORD', 'tradingagents123')}@" \
+                       f"{os.getenv('MONGODB_HOST', 'mongodb')}:" \
+                       f"{os.getenv('MONGODB_PORT', '27017')}/" \
+                       f"?authSource={os.getenv('MONGODB_AUTH_SOURCE', 'admin')}"
+            
+            client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            db = client[os.getenv("MONGODB_DATABASE", "tradingagents")]
+            
+            # 读取当前环境变量中的API Key
+            deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+            dashscope_key = os.getenv("DASHSCOPE_API_KEY", "")
+            openai_key = os.getenv("OPENAI_API_KEY", "")
+            
+            # 构建LLM配置
+            llm_configs = []
+            
+            # 通义千问（阿里百炼）
+            if dashscope_key:
+                llm_configs.append({
+                    "provider": "zhipu",
+                    "model_name": "glm-4",
+                    "api_key": dashscope_key,
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+                    "enabled": True,
+                    "priority": 1,
+                    "max_tokens": 4000,
+                    "temperature": 0.7
+                })
+            
+            # DeepSeek
+            if deepseek_key:
+                llm_configs.append({
+                    "provider": "deepseek",
+                    "model_name": "deepseek-chat",
+                    "api_key": deepseek_key,
+                    "base_url": "https://api.deepseek.com",
+                    "enabled": True,
+                    "priority": 2,
+                    "max_tokens": 4000,
+                    "temperature": 0.7
+                })
+            
+            # OpenAI
+            if openai_key:
+                llm_configs.append({
+                    "provider": "openai",
+                    "model_name": "gpt-4",
+                    "api_key": openai_key,
+                    "base_url": "https://api.openai.com/v1",
+                    "enabled": True,
+                    "priority": 3,
+                    "max_tokens": 4000,
+                    "temperature": 0.7
+                })
+            
+            # 保存到数据库
+            if llm_configs:
+                llm_config_doc = {
+                    "config_type": "llm",
+                    "version": 1,
+                    "llm_configs": llm_configs,
+                    "updated_at": datetime.now()
+                }
+                
+                result = db.system_config.update_one(
+                    {"config_type": "llm"},
+                    {"$set": llm_config_doc},
+                    upsert=True
+                )
+                
+                logger.info(f"✅ LLM配置已自动同步到MongoDB (匹配:{result.matched_count}, 修改:{result.modified_count})")
+            
+            client.close()
+            
+        except Exception as e:
+            logger.error(f"⚠️ LLM配置同步到MongoDB失败: {e}")
+            # 不抛出异常，避免影响主流程
 
 
 # 全局实例

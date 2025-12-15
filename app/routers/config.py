@@ -2292,3 +2292,142 @@ async def delete_database_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"删除数据库配置失败: {str(e)}"
         )
+
+
+# ========== 新闻收集配置管理 ==========
+
+class NewsCollectionConfigModel(BaseModel):
+    """新闻收集配置模型"""
+    auto_collect: bool = True
+    collection_days: int = 30
+    schedule_times: List[str] = ["02:00"]
+
+
+@router.get("/news-collection")
+async def get_news_collection_config(
+    current_user: User = Depends(get_current_user)
+):
+    """获取新闻收集配置"""
+    try:
+        from app.core.database import get_mongo_db
+        
+        db = get_mongo_db()
+        config_doc = await db.system_config.find_one({"user_id": "default_user"})
+        
+        if config_doc:
+            # 移除 MongoDB 的 _id 字段
+            config_doc.pop("_id", None)
+            config_doc.pop("user_id", None)
+            config_doc.pop("updated_at", None)
+            
+            config = NewsCollectionConfigModel(**config_doc)
+            logger.info(f"✅ 获取新闻收集配置成功: {config.dict()}")
+        else:
+            # 返回默认配置
+            config = NewsCollectionConfigModel()
+            logger.info(f"⚠️ 未找到配置，返回默认值: {config.dict()}")
+        
+        return {
+            "success": True,
+            "message": "获取配置成功",
+            "data": config.dict()
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ 获取新闻收集配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
+
+
+@router.post("/news-collection")
+async def save_news_collection_config(
+    config: NewsCollectionConfigModel,
+    current_user: User = Depends(get_current_user)
+):
+    """保存新闻收集配置"""
+    try:
+        from app.core.database import get_mongo_db
+        
+        db = get_mongo_db()
+        
+        # 验证时间格式
+        for time_str in config.schedule_times:
+            try:
+                hour, minute = map(int, time_str.split(":"))
+                if not (0 <= hour < 24 and 0 <= minute < 60):
+                    raise ValueError(f"无效的时间: {time_str}")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"时间格式错误: {time_str}")
+        
+        # 准备保存的文档
+        config_doc = {
+            "user_id": "default_user",
+            "auto_collect": config.auto_collect,
+            "collection_days": config.collection_days,
+            "schedule_times": config.schedule_times,
+            "updated_at": datetime.now()
+        }
+        
+        # 保存到数据库（upsert：不存在则插入，存在则更新）
+        result = await db.system_config.update_one(
+            {"user_id": "default_user"},
+            {"$set": config_doc},
+            upsert=True
+        )
+        
+        logger.info(f"✅ 保存新闻收集配置成功: {config.dict()}")
+        logger.info(f"   匹配: {result.matched_count}, 修改: {result.modified_count}, upsert_id: {result.upserted_id}")
+        
+        # 审计日志
+        try:
+            await log_operation(
+                user_id=str(getattr(current_user, "id", "")),
+                username=getattr(current_user, "username", "unknown"),
+                action_type=ActionType.CONFIG_MANAGEMENT,
+                action="save_news_collection_config",
+                details={"schedule_times": config.schedule_times},
+                success=True,
+            )
+        except Exception:
+            pass
+        
+        return {
+            "success": True,
+            "message": "配置保存成功",
+            "data": config.dict()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 保存新闻收集配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存配置失败: {str(e)}")
+
+
+@router.post("/reload-news-scheduler")
+async def reload_news_scheduler(
+    current_user: User = Depends(get_current_user)
+):
+    """重新加载新闻收集调度器配置"""
+    try:
+        # 导入调度器服务
+        from app.services.scheduler_service import scheduler_service
+        
+        # 重新加载配置
+        if hasattr(scheduler_service, 'load_news_collection_config'):
+            await scheduler_service.load_news_collection_config()
+            logger.info("✅ 新闻收集调度器配置重新加载成功")
+            
+            return {
+                "success": True,
+                "message": "调度器配置已重新加载"
+            }
+        else:
+            logger.warning("⚠️ scheduler_service 没有 load_news_collection_config 方法")
+            return {
+                "success": False,
+                "message": "调度器服务不支持配置重载"
+            }
+    
+    except Exception as e:
+        logger.error(f"❌ 重新加载调度器配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"重新加载失败: {str(e)}")

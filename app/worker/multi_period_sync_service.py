@@ -10,7 +10,14 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from app.services.historical_data_service import get_historical_data_service
-from app.worker.tushare_sync_service import TushareSyncService
+
+# 防御性导入：如果旧模块缺失，不影响系统启动
+try:
+    from app.worker.tushare_sync_service import TushareSyncService
+except ImportError:
+    print("⚠️ Warning: TushareSyncService module missing, skipping.")
+    TushareSyncService = None
+
 from app.worker.akshare_sync_service import AKShareSyncService
 from app.worker.baostock_sync_service import BaoStockSyncService
 
@@ -47,9 +54,13 @@ class MultiPeriodSyncService:
         try:
             self.historical_service = await get_historical_data_service()
             
-            # 初始化各数据源服务
-            self.tushare_service = TushareSyncService()
-            await self.tushare_service.initialize()
+            # 初始化各数据源服务（防御性检查）
+            if TushareSyncService is not None:
+                self.tushare_service = TushareSyncService()
+                await self.tushare_service.initialize()
+            else:
+                self.tushare_service = None
+                logger.warning("⚠️ TushareSyncService 不可用，已跳过")
             
             self.akshare_service = AKShareSyncService()
             await self.akshare_service.initialize()
@@ -154,8 +165,11 @@ class MultiPeriodSyncService:
         try:
             logger.info(f"📈 开始同步{data_source}-{period}数据: {len(symbols)}只股票")
             
-            # 选择对应的服务
+            # 选择对应的服务（防御性检查）
             if data_source == "tushare":
+                if self.tushare_service is None:
+                    logger.warning(f"⚠️ TushareSyncService 不可用，跳过")
+                    return stats
                 service = self.tushare_service
             elif data_source == "akshare":
                 service = self.akshare_service

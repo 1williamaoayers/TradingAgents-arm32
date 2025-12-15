@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from .base import DataSourceAdapter
-from .tushare_adapter import TushareAdapter
+# from .tushare_adapter import TushareAdapter  # 注释掉：模块缺失
 from .akshare_adapter import AKShareAdapter
 from .baostock_adapter import BaoStockAdapter
 
@@ -24,7 +24,7 @@ class DataSourceManager:
 
     def __init__(self):
         self.adapters: List[DataSourceAdapter] = [
-            TushareAdapter(),
+            # TushareAdapter(),
             AKShareAdapter(),
             BaoStockAdapter(),
         ]

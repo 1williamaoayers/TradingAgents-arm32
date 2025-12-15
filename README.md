@@ -98,6 +98,35 @@ streamlit run web/主页.py
 1. 启动应用后,访问 http://localhost:8501
 2. 点击侧边栏 **"⚙️ 配置向导"**
 3. 按步骤填写:
+
+### ⚠️ 重要提示：修改配置后需要重启
+
+**当您在Web界面修改API密钥或其他配置后，需要重新加载Docker容器使配置生效：**
+
+```bash
+# 重新加载配置（推荐）
+docker-compose down && docker-compose up -d
+
+# 或者分步执行
+docker-compose down
+docker-compose up -d
+```
+
+**为什么需要重启？**
+- ✅ 环境变量在容器启动时加载
+- ✅ 修改.env文件不会自动更新运行中的容器
+- ✅ 重启后新配置立即生效
+
+**⚠️ 注意**：
+- ❌ 不要使用 `docker-compose restart` - 它不会重新加载.env文件
+- ✅ 必须使用 `docker-compose down && docker-compose up -d` - 完全重建容器
+
+**提示**：
+- ⏱️ 重启通常只需要30-40秒
+- 💾 不会丢失任何数据
+- 🔄 配置文件已自动保存并备份
+
+---
    - **步骤1**: AI模型API密钥 (必填)
    - **步骤2**: 数据源API密钥 (可选)
    - **步骤3**: 数据库配置 (自动)

@@ -380,6 +380,38 @@ class UnifiedNewsAnalyzer:
         # 获取当前日期
         curr_date = datetime.now().strftime("%Y-%m-%d")
         
+        # 优先级0: 从数据库获取新闻（最高优先级）
+        try:
+            logger.info(f"[统一新闻工具] 🔍 优先从数据库获取 {stock_code} 的新闻...")
+            db_news = self._get_news_from_database(stock_code, max_news)
+            if db_news:
+                logger.info(f"[统一新闻工具] ✅ 数据库新闻获取成功: {len(db_news)} 字符")
+                return self._format_news_result(db_news, "数据库缓存", model_info)
+            else:
+                logger.info(f"[统一新闻工具] ⚠️ 数据库中没有 {stock_code} 的新闻，尝试同步...")
+                
+                # 🔥 数据库没有数据时，调用同步服务同步新闻
+                try:
+                    logger.info(f"[统一新闻工具] 📡 调用同步服务同步 {stock_code} 的新闻...")
+                    synced_news = self._sync_news_from_akshare(stock_code, max_news)
+                    
+                    if synced_news:
+                        logger.info(f"[统一新闻工具] ✅ 同步成功，重新从数据库获取...")
+                        # 重新从数据库获取
+                        db_news = self._get_news_from_database(stock_code, max_news)
+                        if db_news:
+                            logger.info(f"[统一新闻工具] ✅ 同步后数据库新闻获取成功: {len(db_news)} 字符")
+                            return self._format_news_result(db_news, "数据库缓存(新同步)", model_info)
+                    else:
+                        logger.warning(f"[统一新闻工具] ⚠️ 同步服务未返回新闻数据")
+                
+                except Exception as sync_error:
+                    logger.warning(f"[统一新闻工具] ⚠️ 同步服务调用失败: {sync_error}")
+                
+                logger.info(f"[统一新闻工具] ⚠️ 同步后仍无数据，尝试其他数据源...")
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] 数据库新闻获取失败: {e}")
+        
         # 优先级1: Google新闻（港股搜索）
         try:
             if hasattr(self.toolkit, 'get_google_news'):

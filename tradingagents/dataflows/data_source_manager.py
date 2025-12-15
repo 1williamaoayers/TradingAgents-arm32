@@ -33,7 +33,7 @@ class ChinaDataSource(Enum):
     值使用统一的数据源编码
     """
     MONGODB = DataSourceCode.MONGODB  # MongoDB数据库缓存（最高优先级）
-    TUSHARE = DataSourceCode.TUSHARE
+    # TUSHARE = DataSourceCode.TUSHARE  # 注释掉：TUSHARE 不存在，使用 AKSHARE 代替
     AKSHARE = DataSourceCode.AKSHARE
     BAOSTOCK = DataSourceCode.BAOSTOCK
 

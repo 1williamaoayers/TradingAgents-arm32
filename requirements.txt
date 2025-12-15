@@ -17,6 +17,7 @@ chromadb
 setuptools
 backtrader
 akshare>=1.17.86
+tushare
 baostock
 finnhub-python
 parsel

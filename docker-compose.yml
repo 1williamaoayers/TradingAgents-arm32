@@ -43,6 +43,11 @@ services:
       - "8501:8501"
     volumes:
       - .:/app
+      - data:/app/data
+      - logs:/app/logs
+      - cache:/app/cache
+    env_file:
+      - .env # 🔥 从宿主机.env文件加载所有环境变量
     environment:
       - TZ=Asia/Shanghai
       - MONGODB_HOST=mongodb
@@ -52,6 +57,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=tradingagents123
+    command: /bin/bash /app/run_all.sh
     depends_on:
       mongodb:
         condition: service_healthy

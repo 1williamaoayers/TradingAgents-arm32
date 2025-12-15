@@ -1158,3 +1158,99 @@ async def update_job_progress(
     except Exception as e:
         logger.error(f"❌ 更新任务进度失败: {e}")
 
+
+    
+    async def load_news_collection_config(self):
+        """
+        从数据库加载新闻收集配置并创建定时任务
+        
+        支持多个时间点，每个时间点创建一个独立的 cron 任务
+        """
+        try:
+            db = self._get_db()
+            
+            # 读取配置
+            config = await db.system_config.find_one({"user_id": "default_user"})
+            
+            if not config:
+                logger.warning("⚠️ 未找到新闻收集配置，使用默认值")
+                config = {
+                    "auto_collect": True,
+                    "collection_days": 30,
+                    "schedule_times": ["02:00"]
+                }
+            
+            auto_collect = config.get("auto_collect", True)
+            schedule_times = config.get("schedule_times", ["02:00"])
+            
+            logger.info(f"📋 加载新闻收集配置: auto_collect={auto_collect}, times={schedule_times}")
+            
+            # 移除旧的新闻同步任务
+            old_jobs = [job for job in self.scheduler.get_jobs() if job.id.startswith("news_sync_")]
+            for job in old_jobs:
+                self.scheduler.remove_job(job.id)
+                logger.info(f"🗑️ 移除旧任务: {job.id}")
+            
+            # 如果启用自动收集，创建新任务
+            if auto_collect:
+                from app.worker.akshare_sync_service import sync_news_task
+                
+                for i, time_str in enumerate(schedule_times):
+                    try:
+                        hour, minute = map(int, time_str.split(":"))
+                        
+                        # 创建 cron 任务
+                        job_id = f"news_sync_{time_str.replace(':', '')}"
+                        
+                        self.scheduler.add_job(
+                            sync_news_task,
+                            'cron',
+                            hour=hour,
+                            minute=minute,
+                            id=job_id,
+                            name=f"新闻数据同步 ({time_str})",
+                            replace_existing=True,
+                            misfire_grace_time=300  # 5分钟容错
+                        )
+                        
+                        logger.info(f"✅ 创建新闻同步任务: {job_id} (每天 {time_str})")
+                        
+                        # 记录任务元数据
+                        await self._save_job_metadata(
+                            job_id=job_id,
+                            display_name=f"新闻数据同步 ({time_str})",
+                            description=f"每天 {time_str} 自动同步自选股新闻数据"
+                        )
+                        
+                    except Exception as e:
+                        logger.error(f"❌ 创建任务失败 ({time_str}): {e}")
+                
+                logger.info(f"✅ 新闻收集配置加载完成，共创建 {len(schedule_times)} 个任务")
+            else:
+                logger.info("⚠️ 自动收集已禁用，不创建任务")
+        
+        except Exception as e:
+            logger.error(f"❌ 加载新闻收集配置失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _save_job_metadata(self, job_id: str, display_name: str, description: str):
+        """保存任务元数据"""
+        try:
+            db = self._get_db()
+            await db.scheduler_metadata.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "job_id": job_id,
+                    "display_name": display_name,
+                    "description": description,
+                    "updated_at": get_utc8_now()
+                }},
+                upsert=True
+            )
+        except Exception as e:
+            logger.warning(f"保存任务元数据失败: {e}")
+
+
+# 全局调度器服务实例（用于API调用）
+scheduler_service = None
