@@ -136,6 +136,14 @@ class GraphSetup:
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
+        if "sentiment" in selected_analysts:
+            # sentiment分析师使用social的实现和工具
+            analyst_nodes["sentiment"] = create_social_media_analyst(
+                self.quick_thinking_llm, self.toolkit
+            )
+            delete_nodes["sentiment"] = create_msg_delete()
+            tool_nodes["sentiment"] = self.tool_nodes["social"]
+
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(
             self.quick_thinking_llm, self.bull_memory

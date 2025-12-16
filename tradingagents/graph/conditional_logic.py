@@ -98,6 +98,44 @@ class ConditionalLogic:
         logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear Social")
         return "Msg Clear Social"
 
+    def should_continue_sentiment(self, state: AgentState):
+        """Determine if sentiment analysis should continue."""
+        from tradingagents.utils.logging_init import get_logger
+        logger = get_logger("agents")
+
+        messages = state["messages"]
+        last_message = messages[-1]
+
+        # 死循环修复: 添加工具调用次数检查
+        tool_call_count = state.get("sentiment_tool_call_count", 0)
+        max_tool_calls = 3
+
+        # 检查是否已经有情绪分析报告
+        sentiment_report = state.get("sentiment_report", "")
+
+        logger.info(f"🔀 [条件判断] should_continue_sentiment")
+        logger.info(f"🔀 [条件判断] - 消息数量: {len(messages)}")
+        logger.info(f"🔀 [条件判断] - 报告长度: {len(sentiment_report)}")
+        logger.info(f"🔧 [死循环修复] - 工具调用次数: {tool_call_count}/{max_tool_calls}")
+
+        # 死循环修复: 如果达到最大工具调用次数，强制结束
+        if tool_call_count >= max_tool_calls:
+            logger.warning(f"🔧 [死循环修复] 达到最大工具调用次数，强制结束: Msg Clear Sentiment")
+            return "Msg Clear Sentiment"
+
+        # 如果已经有报告内容，说明分析已完成，不再循环
+        if sentiment_report and len(sentiment_report) > 100:
+            logger.info(f"🔀 [条件判断] ✅ 报告已完成，返回: Msg Clear Sentiment")
+            return "Msg Clear Sentiment"
+
+        # 只有AIMessage才有tool_calls属性
+        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            logger.info(f"🔀 [条件判断] 🔧 检测到tool_calls，返回: tools_sentiment")
+            return "tools_sentiment"
+
+        logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear Sentiment")
+        return "Msg Clear Sentiment"
+
     def should_continue_news(self, state: AgentState):
         """Determine if news analysis should continue."""
         from tradingagents.utils.logging_init import get_logger

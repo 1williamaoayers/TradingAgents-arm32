@@ -57,6 +57,9 @@ def get_alpha_vantage_sentiment(ticker: str) -> Dict[str, Any]:
         return {'error': str(e)}
 
 
+from langchain_core.tools import tool
+
+@tool
 def get_combined_sentiment(ticker: str) -> str:
     """组合多个来源的情绪数据生成报告
     

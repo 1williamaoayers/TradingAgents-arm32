@@ -169,6 +169,7 @@ class MongoDBReportManager:
             document = {
                 "analysis_id": analysis_id,
                 "stock_symbol": stock_symbol,
+                "stock_code": stock_symbol,  # 🔥 添加stock_code字段（与stock_symbol保持一致，兼容前端）
                 "stock_name": stock_name,  # 🔥 添加股票名称字段
                 "market_type": market_type,  # 🔥 添加市场类型字段
                 "model_info": model_info,  # 🔥 添加模型信息字段

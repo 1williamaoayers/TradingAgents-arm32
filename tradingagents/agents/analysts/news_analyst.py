@@ -209,9 +209,9 @@ def create_news_analyst(llm, toolkit):
             try:
                 # 强制预先获取新闻数据
                 logger.info(f"[新闻分析师] 🔧 预处理：强制调用统一新闻工具...")
-                logger.info(f"[新闻分析师] 📊 调用参数: stock_code={ticker}, max_news=10, model_info={model_info}")
+                logger.info(f"[新闻分析师] 📊 调用参数: stock_code={ticker}, max_news=36, model_info={model_info}")
 
-                pre_fetched_news_result = unified_news_tool(stock_code=ticker, max_news=10, model_info=model_info)
+                pre_fetched_news_result = unified_news_tool(stock_code=ticker, max_news=36, model_info=model_info)
                 
                 # 处理工具返回的字典
                 if isinstance(pre_fetched_news_result, dict):
@@ -345,9 +345,9 @@ def create_news_analyst(llm, toolkit):
                 try:
                     # 强制获取新闻数据
                     logger.info(f"[新闻分析师] 🔧 强制调用统一新闻工具获取新闻数据...")
-                    logger.info(f"[新闻分析师] 📊 调用参数: stock_code={ticker}, max_news=10")
+                    logger.info(f"[新闻分析师] 📊 调用参数: stock_code={ticker}, max_news=36")
 
-                    forced_news_result = unified_news_tool(stock_code=ticker, max_news=10, model_info=model_info)
+                    forced_news_result = unified_news_tool(stock_code=ticker, max_news=36, model_info=model_info)
                     
                     # 处理工具返回的字典
                     if isinstance(forced_news_result, dict):

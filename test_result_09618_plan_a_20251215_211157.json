@@ -1,0 +1,29 @@
+{
+  "test_time": "2025-12-15T21:11:57.269822",
+  "test_plan": "Plan A - 3 Analysts Only",
+  "duration": 681.8748145103455,
+  "success": true,
+  "stock_symbol": "09618",
+  "report_count": 9,
+  "expected_count": 9,
+  "success_rate": "100.0%",
+  "reports": [
+    "messages",
+    "company_of_interest",
+    "trade_date",
+    "sender",
+    "market_report",
+    "sentiment_report",
+    "news_report",
+    "fundamentals_report",
+    "market_tool_call_count",
+    "news_tool_call_count",
+    "fundamentals_tool_call_count",
+    "investment_debate_state",
+    "investment_plan",
+    "trader_investment_plan",
+    "risk_debate_state",
+    "final_trade_decision",
+    "risk_assessment"
+  ]
+}

@@ -81,7 +81,7 @@ def fetch_watchlist_from_db():
 
 
 def add_stock_to_db(symbol, market):
-    """添加股票到 MongoDB"""
+    """添加股票到 MongoDB（改进版：获取真实股票名称）"""
     try:
         from pymongo import MongoClient
         
@@ -105,10 +105,40 @@ def add_stock_to_db(symbol, market):
             client.close()
             return False, "该股票已在自选股中"
         
+        # ✨ 改进：获取真实股票名称
+        stock_name = symbol  # 默认使用代码
+        try:
+            # 标准化代码
+            clean_symbol = symbol.replace('.HK', '').replace('.SH', '').replace('.SZ', '')
+            
+            # 1. 先尝试从stock_basic_info获取（A股）
+            basic_info = db.stock_basic_info.find_one({"symbol": clean_symbol})
+            if basic_info:
+                stock_name = basic_info.get('name', symbol)
+                print(f"[DEBUG] 从数据库获取: {symbol} -> {stock_name}")
+            else:
+                # 2. 如果是港股，使用AKShare API实时获取
+                if '.HK' in symbol or market == "港股":
+                    try:
+                        import akshare as ak
+                        # 使用AKShare获取港股名称
+                        hk_info = ak.stock_hk_spot_em()
+                        # 查找匹配的股票
+                        matched = hk_info[hk_info['代码'] == clean_symbol]
+                        if not matched.empty:
+                            stock_name = matched.iloc[0]['名称']
+                            print(f"[DEBUG] 从AKShare获取: {symbol} -> {stock_name}")
+                        else:
+                            print(f"[WARNING] AKShare未找到 {symbol}")
+                    except Exception as e:
+                        print(f"[WARNING] AKShare查询失败: {e}")
+        except Exception as e:
+            print(f"[WARNING] 获取股票名称失败: {e}")
+        
         # 添加到数据库
         favorite_stock = {
             "stock_code": symbol,
-            "stock_name": symbol,  # 后续可以通过 API 获取真实股票名称
+            "stock_name": stock_name,  # ✨ 使用真实名称
             "market": market,
             "added_at": datetime.utcnow(),
             "tags": [],
@@ -132,7 +162,7 @@ def add_stock_to_db(symbol, market):
         
         client.close()
         
-        return result.acknowledged, "添加成功"
+        return result.acknowledged, f"添加成功：{stock_name}"
     except Exception as e:
         return False, f"添加失败: {e}"
 

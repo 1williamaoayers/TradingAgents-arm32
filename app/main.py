@@ -579,23 +579,69 @@ async def lifespan(app: FastAPI):
                 )
             except Exception as e:
                 logger.error(f"❌ 新闻同步失败: {e}", exc_info=True)
+        
+        # ==================== 多源新闻同步（新增）====================
+        async def run_multi_source_news_sync():
+            """运行多源新闻同步任务 - 整合AKShare、Alpha Vantage、FinnHub、RSS"""
+            try:
+                logger.info("📰 开始多源新闻数据同步...")
+                from app.worker.multi_source_news_service import get_multi_source_news_service
+                
+                service = await get_multi_source_news_service()
+                result = await service.sync_news_data(
+                    symbols=None,
+                    max_news_per_stock=settings.NEWS_SYNC_MAX_PER_SOURCE,
+                    favorites_only=True  # 只同步自选股
+                )
+                
+                logger.info(
+                    f"✅ 多源新闻同步完成: "
+                    f"处理{result['total_processed']}只自选股, "
+                    f"成功{result['success_count']}只, "
+                    f"新闻总数{result['news_count']}条, "
+                    f"耗时{result.get('duration', 0):.2f}秒"
+                )
+                
+                # 输出各源统计
+                for source, count in result.get('source_stats', {}).items():
+                    logger.info(f"  📰 {source}: {count} 条新闻")
+                    
+            except Exception as e:
+                logger.error(f"❌ 多源新闻同步失败: {e}", exc_info=True)
 
         # ==================== 港股/美股数据配置 ====================
         # 港股和美股采用按需获取+缓存模式，不再配置定时同步任务
         logger.info("🇭🇰 港股数据采用按需获取+缓存模式")
         logger.info("🇺🇸 美股数据采用按需获取+缓存模式")
 
-        scheduler.add_job(
-            run_news_sync,
-            CronTrigger.from_crontab(settings.NEWS_SYNC_CRON, timezone=settings.TIMEZONE),
-            id="news_sync",
-            name="新闻数据同步（AKShare - 仅自选股）"
-        )
-        if not settings.NEWS_SYNC_ENABLED:
-            scheduler.pause_job("news_sync")
-            logger.info(f"⏸️ 新闻数据同步已添加但暂停: {settings.NEWS_SYNC_CRON}")
+        # ==================== 原有AKShare新闻同步（保留作为备份）====================
+        if settings.NEWS_SYNC_ENABLED:
+            scheduler.add_job(
+                run_news_sync,
+                CronTrigger.from_crontab(settings.NEWS_SYNC_CRON, timezone=settings.TIMEZONE),
+                id='news_sync',
+                name='新闻数据同步（AKShare）',
+                replace_existing=True
+            )
+            logger.info(f"✅ 新闻同步任务已配置: {settings.NEWS_SYNC_CRON}")
+        
+        # ==================== 多源新闻同步（新增）====================
+        # 使用环境变量控制是否启用多源新闻同步
+        import os
+        multi_source_enabled = os.getenv("MULTI_SOURCE_NEWS_ENABLED", "true").lower() == "true"
+        
+        if multi_source_enabled and settings.NEWS_SYNC_ENABLED:
+            # 多源新闻同步（每天凌晨2:30，避免与原任务冲突）
+            scheduler.add_job(
+                run_multi_source_news_sync,
+                CronTrigger.from_crontab("30 2 * * *", timezone=settings.TIMEZONE),
+                id='multi_source_news_sync',
+                name='多源新闻数据同步',
+                replace_existing=True
+            )
+            logger.info(f"✅ 多源新闻同步任务已配置: 每天凌晨2:30")
         else:
-            logger.info(f"📰 新闻数据同步已配置（仅自选股）: {settings.NEWS_SYNC_CRON}")
+            logger.info(f"⏸️ 多源新闻同步任务未启用或已暂停")
 
         scheduler.start()
 
@@ -754,6 +800,8 @@ app.include_router(historical_data.router, tags=["historical-data"])
 # app.include_router(multi_period_sync.router, tags=["multi-period-sync"])  # 注释掉：依赖缺失的 Tushare 模块
 # app.include_router(financial_data.router, tags=["financial-data"])  # 注释掉：依赖缺失的 Tushare 模块
 app.include_router(news_data.router, tags=["news-data"])
+from app.routers import news_stats
+app.include_router(news_stats.router, prefix="/api", tags=["news-stats"])
 app.include_router(social_media.router, tags=["social-media"])
 app.include_router(internal_messages.router, tags=["internal-messages"])
 

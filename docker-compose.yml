@@ -40,7 +40,8 @@ services:
     restart: unless-stopped
     user: root
     ports:
-      - "8501:8501"
+      - "8000:8000"  # FastAPI backend
+      - "8501:8501"  # Streamlit frontend
     volumes:
       - .:/app
       - data:/app/data

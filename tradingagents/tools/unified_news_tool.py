@@ -98,14 +98,54 @@ class UnifiedNewsAnalyzer:
         # 默认按A股处理
         else:
             return "A股"
-
-    def _get_news_from_database(self, stock_code: str, max_news: int = 10) -> str:
+    
+    def _get_company_name_from_code(self, stock_code: str) -> str:
         """
-        从数据库获取新闻
+        根据股票代码获取公司名称
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            str: 公司名称，如果无法获取则返回空字符串
+        """
+        # 简单的映射表（常见股票）
+        stock_name_map = {
+            '09618': '京东集团',
+            '9618': '京东集团',
+            'JD': '京东',
+            '00700': '腾讯控股',
+            '0700': '腾讯控股',
+            'BABA': '阿里巴巴',
+            '09988': '阿里巴巴',
+            'AAPL': '苹果',
+            'TSLA': '特斯拉',
+            'NVDA': '英伟达',
+            '000001': '平安银行',
+            '600519': '贵州茅台',
+        }
+        
+        # 标准化代码
+        clean_code = stock_code.replace('.HK', '').replace('.SH', '').replace('.SZ', '')
+        
+        # 查找映射
+        company_name = stock_name_map.get(clean_code, '')
+        
+        if company_name:
+            logger.debug(f"[统一新闻工具] 股票代码 {stock_code} 映射到公司名称: {company_name}")
+        else:
+            logger.debug(f"[统一新闻工具] 股票代码 {stock_code} 未找到公司名称映射")
+        
+        return company_name
+
+    def _get_news_from_database(self, stock_code: str, max_news: int = 10, company_name: str = "") -> str:
+        """
+        从数据库获取新闻（改进版：支持内容相关性查询）
 
         Args:
             stock_code: 股票代码
             max_news: 最大新闻数量
+            company_name: 公司名称（用于内容匹配）
 
         Returns:
             str: 格式化的新闻内容，如果没有新闻则返回空字符串
@@ -132,26 +172,121 @@ class UnifiedNewsAnalyzer:
             # 查询最近30天的新闻（扩大时间范围）
             thirty_days_ago = datetime.now() - timedelta(days=30)
 
-            # 尝试多种查询方式（使用 symbol 字段）
-            query_list = [
+            # 🔥 改进：构建关键词列表（支持内容相关性查询）
+            keywords = [stock_code, clean_code]
+            
+            if company_name:
+                # 添加公司名称相关关键词
+                keywords.append(company_name)
+                # 去除"集团"、"股份"等后缀
+                clean_name = company_name.replace('集团', '').replace('股份', '').replace('有限公司', '')
+                if clean_name != company_name:
+                    keywords.append(clean_name)
+                
+                # 添加相关业务关键词（针对大公司）
+                if clean_name:
+                    keywords.extend([
+                        f'{clean_name}物流',
+                        f'{clean_name}零售',
+                        f'{clean_name}科技'
+                    ])
+            
+            # 构建正则表达式（不区分大小写）
+            keyword_pattern = '|'.join([k for k in keywords if k])
+            
+            logger.info(f"[统一新闻工具] 🔍 查询关键词: {keywords[:5]}...")  # 只显示前5个
+
+            # 🔥 改进：分两步查询，先获取专属新闻，再补充RSS通用新闻
+            news_items = []
+            
+            # 第一步：查询专属新闻（优先级1-5）
+            specific_queries = [
+                # 优先级1: 精确匹配symbol + 时间范围
                 {'symbol': clean_code, 'publish_time': {'$gte': thirty_days_ago}},
                 {'symbol': stock_code, 'publish_time': {'$gte': thirty_days_ago}},
-                {'symbols': clean_code, 'publish_time': {'$gte': thirty_days_ago}},
-                # 如果最近30天没有新闻，则查询所有新闻（不限时间）
+                
+                # 优先级2: 标题包含关键词 + 时间范围
+                {'title': {'$regex': keyword_pattern, '$options': 'i'}, 'publish_time': {'$gte': thirty_days_ago}},
+                
+                # 优先级3: 内容包含关键词 + 时间范围
+                {'content': {'$regex': keyword_pattern, '$options': 'i'}, 'publish_time': {'$gte': thirty_days_ago}},
+                
+                # 优先级4: 精确匹配symbol（不限时间）
                 {'symbol': clean_code},
-                {'symbols': clean_code},
+                {'symbol': stock_code},
+                
+                # 优先级5: 标题包含关键词（不限时间）
+                {'title': {'$regex': keyword_pattern, '$options': 'i'}},
             ]
-
-            news_items = []
-            for query in query_list:
+            
+            # 尝试获取专属新闻
+            for query in specific_queries:
                 cursor = collection.find(query).sort('publish_time', -1).limit(max_news)
                 news_items = list(cursor)
                 if news_items:
-                    logger.info(f"[统一新闻工具] 📊 使用查询 {query} 找到 {len(news_items)} 条新闻")
+                    logger.info(f"[统一新闻工具] 📊 找到 {len(news_items)} 条专属新闻")
+                    logger.debug(f"[统一新闻工具] 查询条件: {query}")
                     break
+            
+            # 第二步：实时获取AKShare新闻（如果专属新闻不足max_news条）
+            if len(news_items) < max_news:
+                try:
+                    logger.info(f"[统一新闻工具] 📡 专属新闻不足，尝试实时获取AKShare新闻...")
+                    
+                    # 动态导入AKShare适配器
+                    import asyncio
+                    from app.worker.news_adapters.akshare_adapter import AKShareAdapter
+                    
+                    # 创建适配器并获取实时新闻
+                    akshare = AKShareAdapter()
+                    
+                    # 判断是否需要初始化
+                    loop = None
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    
+                    # 初始化并获取新闻
+                    if not loop.is_running():
+                        loop.run_until_complete(akshare.initialize())
+                        realtime_limit = min(10, max_news - len(news_items))  # 最多获取10条实时新闻
+                        realtime_news = loop.run_until_complete(akshare.get_news(stock_code, limit=realtime_limit))
+                    else:
+                        # 如果事件循环已在运行，使用同步方式
+                        import nest_asyncio
+                        nest_asyncio.apply()
+                        loop.run_until_complete(akshare.initialize())
+                        realtime_limit = min(10, max_news - len(news_items))
+                        realtime_news = loop.run_until_complete(akshare.get_news(stock_code, limit=realtime_limit))
+                    
+                    if realtime_news:
+                        logger.info(f"[统一新闻工具] 🔥 实时获取 {len(realtime_news)} 条AKShare新闻")
+                        # 转换为MongoDB格式
+                        for news in realtime_news:
+                            news_items.append(news)
+                        logger.info(f"[统一新闻工具] 📊 合并后共 {len(news_items)} 条新闻（专属+实时AKShare）")
+                    else:
+                        logger.info(f"[统一新闻工具] ⚠️ 实时AKShare未返回新闻")
+                        
+                except Exception as e:
+                    logger.warning(f"[统一新闻工具] ⚠️ 实时获取AKShare新闻失败: {e}")
+            
+            # 第三步：补充RSS通用新闻（如果仍然不足max_news条）
+            if len(news_items) < max_news:
+                rss_limit = max_news - len(news_items)  # 计算还需要多少条
+                rss_query = {'symbol': 'GENERAL', 'source': 'RSS', 'publish_time': {'$gte': thirty_days_ago}}
+                rss_cursor = collection.find(rss_query).sort('publish_time', -1).limit(rss_limit)
+                rss_items = list(rss_cursor)
+                
+                if rss_items:
+                    logger.info(f"[统一新闻工具] 📰 补充 {len(rss_items)} 条RSS通用新闻")
+                    news_items.extend(rss_items)
+                    logger.info(f"[统一新闻工具] 📊 最终合并共 {len(news_items)} 条新闻（专属+实时+RSS）")
 
             if not news_items:
-                logger.info(f"[统一新闻工具] 数据库中没有找到 {stock_code} 的新闻")
+                logger.info(f"[统一新闻工具] 数据库中没有找到 {stock_code} 或 {company_name} 的相关新闻")
                 return ""
 
             # 格式化新闻
@@ -298,7 +433,9 @@ class UnifiedNewsAnalyzer:
         # 优先级0: 从数据库获取新闻（最高优先级）
         try:
             logger.info(f"[统一新闻工具] 🔍 优先从数据库获取 {stock_code} 的新闻...")
-            db_news = self._get_news_from_database(stock_code, max_news)
+            # 获取公司名称用于内容匹配
+            company_name = self._get_company_name_from_code(stock_code)
+            db_news = self._get_news_from_database(stock_code, max_news, company_name)
             if db_news:
                 logger.info(f"[统一新闻工具] ✅ 数据库新闻获取成功: {len(db_news)} 字符")
                 return self._format_news_result(db_news, "数据库缓存", model_info)
@@ -313,7 +450,8 @@ class UnifiedNewsAnalyzer:
                     if synced_news:
                         logger.info(f"[统一新闻工具] ✅ 同步成功，重新从数据库获取...")
                         # 重新从数据库获取
-                        db_news = self._get_news_from_database(stock_code, max_news)
+                        company_name = self._get_company_name_from_code(stock_code)
+                        db_news = self._get_news_from_database(stock_code, max_news, company_name)
                         if db_news:
                             logger.info(f"[统一新闻工具] ✅ 同步后数据库新闻获取成功: {len(db_news)} 字符")
                             return self._format_news_result(db_news, "数据库缓存(新同步)", model_info)
@@ -383,7 +521,8 @@ class UnifiedNewsAnalyzer:
         # 优先级0: 从数据库获取新闻（最高优先级）
         try:
             logger.info(f"[统一新闻工具] 🔍 优先从数据库获取 {stock_code} 的新闻...")
-            db_news = self._get_news_from_database(stock_code, max_news)
+            company_name = self._get_company_name_from_code(stock_code)
+            db_news = self._get_news_from_database(stock_code, max_news, company_name)
             if db_news:
                 logger.info(f"[统一新闻工具] ✅ 数据库新闻获取成功: {len(db_news)} 字符")
                 return self._format_news_result(db_news, "数据库缓存", model_info)
@@ -398,7 +537,8 @@ class UnifiedNewsAnalyzer:
                     if synced_news:
                         logger.info(f"[统一新闻工具] ✅ 同步成功，重新从数据库获取...")
                         # 重新从数据库获取
-                        db_news = self._get_news_from_database(stock_code, max_news)
+                        company_name = self._get_company_name_from_code(stock_code)
+                        db_news = self._get_news_from_database(stock_code, max_news, company_name)
                         if db_news:
                             logger.info(f"[统一新闻工具] ✅ 同步后数据库新闻获取成功: {len(db_news)} 字符")
                             return self._format_news_result(db_news, "数据库缓存(新同步)", model_info)
@@ -412,7 +552,22 @@ class UnifiedNewsAnalyzer:
         except Exception as e:
             logger.warning(f"[统一新闻工具] 数据库新闻获取失败: {e}")
         
-        # 优先级1: Google新闻（港股搜索）
+        # 优先级1: Alpha Vantage个股新闻（新增）✨
+        try:
+            from tradingagents.tools.alpha_vantage_news import get_alpha_vantage_news, format_alpha_vantage_news
+            
+            logger.info(f"[统一新闻工具] 尝试Alpha Vantage个股新闻...")
+            av_news = get_alpha_vantage_news(ticker=stock_code, limit=15)
+            
+            if av_news and len(av_news) > 0:
+                # 格式化为markdown
+                formatted = format_alpha_vantage_news(av_news, stock_code)
+                logger.info(f"[统一新闻工具] ✅ Alpha Vantage个股新闻获取成功: {len(av_news)}条")
+                return self._format_news_result(formatted, "Alpha Vantage个股新闻", model_info)
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] Alpha Vantage个股新闻获取失败: {e}")
+        
+        # 优先级2: Google新闻（港股搜索）
         try:
             if hasattr(self.toolkit, 'get_google_news'):
                 logger.info(f"[统一新闻工具] 尝试Google港股新闻...")

@@ -1,0 +1,58 @@
+2025-12-16 07:33:05,506 | agents               | INFO     | 🔍 [ConfigManager] 加载 .env 文件: /trae/TradingAgents-arm32/.env
+2025-12-16 07:33:05,507 | agents               | INFO     | 🔍 [ConfigManager] 加载前 DASHSCOPE_API_KEY: 空
+2025-12-16 07:33:05,514 | agents               | INFO     | 🔍 [ConfigManager] 加载后 DASHSCOPE_API_KEY: 有值
+2025-12-16 07:33:05,515 | agents               | INFO     | 🔧 [ConfigManager] 开始初始化 MongoDB 存储...
+2025-12-16 07:33:05,515 | agents               | INFO     | 🔍 [ConfigManager] USE_MONGODB_STORAGE=false (解析为: False)
+2025-12-16 07:33:05,516 | agents               | INFO     | ℹ️ [ConfigManager] MongoDB 存储未启用，将使用 JSON 文件存储
+An error occurred: module 'importlib.metadata' has no attribute 'packages_distributions'
+
+======================================================================
+测试 02128.HK (中国联塑) - 四个分析师 [真实内容验证]
+Provider: deepseek
+======================================================================
+初始化 TradingAgentsGraph...
+2025-12-16 20:33:16,774 | llm_adapters         | INFO     | ✅ Token跟踪功能已启用
+2025-12-16 20:33:18,275 | agents               | INFO     | ✅ [DeepSeek] 已启用token统计功能
+2025-12-16 20:33:18,278 | agents.utils.memory  | INFO     | 💡 DeepSeek使用阿里百炼嵌入服务
+2025-12-16 20:33:18,689 | agents.utils.memory  | INFO     | 📚 [ChromaDB] Linux标准配置初始化完成
+2025-12-16 20:33:18,710 | agents.utils.memory  | INFO     | 📚 [ChromaDB] 创建新集合: bull_memory
+2025-12-16 20:33:18,711 | agents.utils.memory  | INFO     | 💡 DeepSeek使用阿里百炼嵌入服务
+2025-12-16 20:33:18,714 | agents.utils.memory  | INFO     | 📚 [ChromaDB] 创建新集合: bear_memory
+2025-12-16 20:33:18,732 | agents.utils.memory  | INFO     | 💡 DeepSeek使用阿里百炼嵌入服务
+2025-12-16 20:33:18,749 | agents.utils.memory  | INFO     | 📚 [ChromaDB] 创建新集合: trader_memory
+2025-12-16 20:33:18,754 | agents.utils.memory  | INFO     | 💡 DeepSeek使用阿里百炼嵌入服务
+2025-12-16 20:33:18,757 | agents.utils.memory  | INFO     | 📚 [ChromaDB] 创建新集合: invest_judge_memory
+2025-12-16 20:33:18,758 | agents.utils.memory  | INFO     | 💡 DeepSeek使用阿里百炼嵌入服务
+2025-12-16 20:33:18,763 | agents.utils.memory  | INFO     | 📚 [ChromaDB] 创建新集合: risk_manager_memory
+
+开始执行分析工作流 (这可能需要几分钟)...
+⚠️ Skipping graph execution, checking existing logs only.
+
+======================================================================
+分析完成 - 结果验证
+======================================================================
+执行状态: unknown
+读取完整日志文件: eval_results/02128.HK/TradingAgentsStrategy_logs/full_states_log.json
+已加载日期 2025-12-16 的完整状态
+
+检查 13 个核心报告的内容质量:
+--------------------------------------------------
+✅ market_report             | 3939 字符         | # **中国联塑（02128.HK）技术分析报告** **分析日期：2025-12-16**  --...
+✅ fundamentals_report       | 2580 字符         | # 中国联塑（02128.HK）基本面分析报告  ## 一、公司基本信息 - **股票代码**：02...
+✅ news_report               | 2260 字符         | ### **中国联塑 (02128.HK) 新闻分析报告**  **报告日期：** 2025年12月...
+✅ sentiment_report          | 1334 字符         | # 市场情绪分析报告  ## 股票代码：02128.HK ## 分析时间：2025年12月16日 2...
+✅ bull_researcher           | 3395 字符         |  Bull Analyst: ### **看涨分析师：为中国联塑（02128.HK）构建强有力的投资...
+✅ bear_researcher           | 2918 字符         |  Bear Analyst: ### **看跌分析师：为中国联塑（02128.HK）敲响警钟——价值...
+✅ research_team_decision    | 2312 字符         | 好的，各位，作为这场辩论的主持人和最终决策者，我来梳理一下。  看涨方的核心论点非常清晰，他们打的是...
+✅ risky_analyst             | 1085 字符         |  Risky Analyst: 听着，我理解保守和中性立场的担忧，但他们的谨慎正在让他们——以及任何...
+✅ safe_analyst              | 1314 字符         |  Safe Analyst: 激进分析师，我必须直接反驳你。你口中的“不对称机会”和“定价错误”，在...
+✅ neutral_analyst           | 1822 字符         |  Neutral Analyst: 好的，作为中性风险分析师，我来谈谈我的看法。你们两位的辩论非常精...
+✅ risk_management_decision  | 3601 字符         | 作为风险管理委员会主席及辩论主持人，我已仔细评估了三位风险分析师——激进、安全（保守）和中性——的辩...
+✅ trader_investment_plan    | 1448 字符         | **股票分析报告：中国联塑 (02128.HK)**  **1. 投资建议：买入** **2. 目标...
+✅ final_trade_decision      | 3601 字符         | 作为风险管理委员会主席及辩论主持人，我已仔细评估了三位风险分析师——激进、安全（保守）和中性——的辩...
+--------------------------------------------------
+有效报告数量: 13 / 13
+
+✅ 验证通过: 所有分析报告均已生成且包含实质内容。
+
+完整结果已保存至: result_02128_verification.json

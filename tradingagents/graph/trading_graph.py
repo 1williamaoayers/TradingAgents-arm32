@@ -381,6 +381,17 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            # 补充缺失的研究团队报告
+            "bull_researcher": final_state.get("bull_researcher", ""),
+            "bear_researcher": final_state.get("bear_researcher", ""),
+            "research_team_decision": final_state["investment_debate_state"].get("judge_decision", {}),
+            
+            # 补充缺失的风险团队报告
+            "risky_analyst": final_state.get("risky_analyst", ""),
+            "safe_analyst": final_state.get("safe_analyst", ""),
+            "neutral_analyst": final_state.get("neutral_analyst", ""),
+            "risk_management_decision": final_state["risk_debate_state"].get("judge_decision", {}),
+
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],

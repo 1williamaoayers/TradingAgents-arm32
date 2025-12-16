@@ -3203,43 +3203,74 @@ onMounted(async () => {
   }
 
   /* 标签页导航 */
+  :deep(.el-tabs__header) {
+    padding: 12px 12px 4px 12px !important; /* 调整头部内边距 */
+    height: auto !important; /* 允许高度自适应 */
+  }
+
   :deep(.el-tabs__nav-wrap) {
+    padding-bottom: 8px; /* 为折行后的标签留出底部空间 */
     &::after {
-      display: none; /* 隐藏默认的底部边框 */
+      display: none;
     }
+  }
+
+  /* 强制允许折行 */
+  :deep(.el-tabs__nav-scroll) {
+    overflow: visible !important;
+    height: auto !important;
+    width: auto !important; /* 确保宽度自适应 */
+    max-width: 100% !important;
+  }
+
+  :deep(.el-tabs__nav) {
+    white-space: normal !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    float: none !important;
+    height: auto !important;
+    transform: none !important; /* 禁用JS计算的transform位移 */
+    width: auto !important; /* 禁用JS计算的宽度 */
+    max-width: 100% !important;
+    z-index: auto !important;
   }
 
   /* 单个标签页样式 */
   :deep(.el-tabs__item) {
-    height: 55px !important;
-    line-height: 55px !important;
-    padding: 0 20px !important;
-    margin-right: 8px !important;
+    height: 40px !important; /* 减小高度 */
+    line-height: 40px !important;
+    padding: 0 12px !important; /* 减小水平内边距 */
+    margin-right: 6px !important;
+    margin-bottom: 8px !important; /* 添加底部外边距以支持多行 */
     background: var(--el-bg-color) !important;
-    border: 2px solid var(--el-border-color) !important;
-    border-radius: 12px !important;
+    border: 1px solid var(--el-border-color) !important; /* 稍微减淡边框 */
+    border-radius: 8px !important; /* 稍微减小圆角 */
     color: var(--el-text-color-regular) !important;
-    font-weight: 600 !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+    font-weight: 500 !important; /* 稍微减小字重 */
+    font-size: 13px !important; /* 稍微减小字号 */
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05) !important;
     position: relative !important;
-    overflow: hidden !important;
-    border-bottom: 2px solid var(--el-border-color) !important; /* 确保底部边框存在 */
+    overflow: visible !important; /* 允许可能的溢出显示 */
+    flex-shrink: 0 !important; /* 防止被压缩 */
 
     &:hover {
       background: var(--el-fill-color-light) !important;
       border-color: #2196f3 !important;
-      transform: translateY(-2px) scale(1.02) !important;
-      box-shadow: 0 4px 15px rgba(33,150,243,0.3) !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 2px 8px rgba(33,150,243,0.2) !important;
       color: #1976d2 !important;
+      z-index: 1;
     }
 
     &.is-active {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
       color: white !important;
       border-color: #667eea !important;
-      box-shadow: 0 6px 20px rgba(102,126,234,0.4) !important;
-      transform: translateY(-3px) scale(1.05) !important;
+      box-shadow: 0 4px 12px rgba(102,126,234,0.3) !important;
+      transform: translateY(-1px) !important;
+      font-weight: 600 !important;
+      z-index: 2;
 
       &::before {
         content: '';
@@ -3249,7 +3280,7 @@ onMounted(async () => {
         right: 0;
         bottom: 0;
         background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%);
-        border-radius: 10px;
+        border-radius: 8px;
         pointer-events: none;
       }
     }
