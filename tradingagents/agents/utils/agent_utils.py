@@ -9,6 +9,8 @@ import functools
 import pandas as pd
 import os
 import re
+import json
+import requests
 from dateutil.relativedelta import relativedelta
 from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
@@ -38,6 +40,55 @@ def create_msg_delete():
         return {"messages": removal_operations + [placeholder]}
     
     return delete_messages
+
+def _search_with_serper(query: str, look_back_days: int = 90) -> str:
+    """内部辅助函数：使用Serper API搜索深度内容"""
+    try:
+        api_key = os.getenv("SERPER_API_KEY")
+        if not api_key:
+            logger.warning("⚠️ [Serper] 未配置SERPER_API_KEY，无法进行深度搜索")
+            return "未找到 (Missing API Key)"
+            
+        url = "https://google.serper.dev/search"
+        headers = {
+            'X-API-KEY': api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        # 使用 qdr:d{days} 进行时间过滤
+        payload = json.dumps({
+            "q": query,
+            "tbs": f"qdr:d{look_back_days}",
+            "num": 10
+        })
+        
+        logger.info(f"🔍 [Serper] API调用: {query}, tbs=qdr:d{look_back_days}")
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        
+        if response.status_code != 200:
+            logger.warning(f"⚠️ [Serper] API请求失败: {response.status_code}")
+            return "未找到 (API Error)"
+            
+        results = response.json().get('organic', [])
+        
+        if not results:
+            logger.info("⚠️ [Serper] 搜索结果为空")
+            return "未找到相关结果"
+            
+        formatted_results = []
+        for item in results:
+            title = item.get('title', '')
+            snippet = item.get('snippet', '')
+            link = item.get('link', '')
+            date = item.get('date', '近期')
+            formatted_results.append(f"### {title}\n- **来源**: {link}\n- **时间**: {date}\n- **摘要**: {snippet}\n")
+            
+        return "\n".join(formatted_results)
+        
+    except Exception as e:
+        logger.error(f"❌ [Serper] 执行出错: {e}")
+        return f"搜索出错: {str(e)}"
+
 
 
 class Toolkit:
@@ -897,6 +948,31 @@ class Toolkit:
                     logger.error(f"❌ [基本面工具调试] A股基本面数据获取失败: {e}")
                     result_data.append(f"## A股基本面财务数据\n获取失败: {e}")
 
+                # 🔥 [基本面补全] 补充最新的财报新闻
+                try:
+                    logger.info("🔍 [基本面补全] 尝试获取最新的A股财报新闻(2025)...")
+                    from tradingagents.dataflows.interface import get_google_news
+                    
+                    # A股代码处理
+                    clean_ticker = ticker
+                    if "." in ticker:
+                        clean_ticker = ticker.split(".")[0]
+                        
+                    # 获取当前年份
+                    target_year = curr_date.split("-")[0] if curr_date else "2025"
+
+                    # 🔍 优化 A股搜索词：年份 + 报表类型
+                    search_query = f"{clean_ticker} {target_year} 季度财报 半年报 业绩公告"
+                    
+                    # 增加 look_back_days=90，使用 Serper API
+                    financial_news = _search_with_serper(search_query, look_back_days=90)
+                    
+                    if financial_news and "未找到" not in financial_news and len(financial_news) > 50:
+                        result_data.append(f"## 最新业绩公告与财报补充 ({target_year}年)\n> 来源：互联网公告搜索 (最近90天)\n> 内容：{target_year}年的季度财报、半年报及业绩公告摘要。\n\n{financial_news}")
+                        logger.info(f"✅ [基本面补全] A股业绩公告补充成功")
+                except Exception as news_e:
+                    logger.warning(f"⚠️ [基本面补全] A股财报新闻获取失败: {news_e}")
+
             elif is_hk:
                 # 港股：使用AKShare数据源，支持多重备用方案
                 logger.info(f"🇭🇰 [统一基本面工具] 处理港股数据，数据深度: {data_depth}...")
@@ -926,6 +1002,49 @@ class Toolkit:
 
                 except Exception as e:
                     logger.error(f"❌ [基本面工具调试] 港股数据获取失败: {e}")
+
+                # 🔥 [基本面补全] 补充最新的财报新闻（弥补结构化数据只有年报的不足）
+                try:
+                    logger.info("🔍 [基本面补全] 尝试获取最新的财报新闻(2025)以补充结构化数据的滞后...")
+                    from tradingagents.utils.stock_utils import StockUtils
+                    
+                    # 尝试获取公司名称以提高搜索准确度
+                    clean_ticker = ticker.replace('.HK', '').replace('.hk', '')
+                    
+                    try:
+                        # 🔥 关键修复：调用 improved_hk 获取中文名称（如 "小米集团"）
+                        from tradingagents.dataflows.providers.hk.improved_hk import get_hk_company_name_improved
+                        company_name = get_hk_company_name_improved(ticker)
+                        # 如果返回的是默认的 "港股01810"，则只用代码，避免搜索 "港股01810 研报" 这种奇怪组合
+                        if company_name and "港股" not in company_name:
+                            # 清理名称后缀（如 －Ｗ, －Ｓ 等港股特殊标记）
+                            company_name = company_name.split('－')[0].split('-')[0]
+                            logger.info(f"🔍 [基本面补全] 获取到公司名称: {company_name}")
+                        else:
+                            company_name = clean_ticker
+                    except Exception as name_e:
+                        logger.warning(f"⚠️ [基本面补全] 获取公司名称失败: {name_e}")
+                        company_name = clean_ticker
+
+                    # 获取当前年份
+                    target_year = curr_date.split("-")[0] if curr_date else "2025"
+
+                    # 🔍 优化搜索词：名称 + 代码 + 年份 + 报表类型 (响应用户需求：季报/半年报)
+                    search_query = f"{company_name} {clean_ticker} {target_year} 季度财报 半年报 业绩公告"
+                    logger.info(f"🔍 [基本面补全] 执行搜索: '{search_query}'")
+                    
+                    # 获取新闻（最近90天 - 对应一个季度）
+                    # 使用 Serper API (qdr:d90)
+                    financial_news = _search_with_serper(search_query, look_back_days=90)
+                    
+                    if financial_news and "未找到" not in financial_news and len(financial_news) > 50:
+                        result_data.append(f"## 最新业绩公告与财报补充 ({target_year}年)\n> 来源：互联网公告搜索 (最近90天)\n> 内容：{target_year}年的季度财报、半年报及业绩公告摘要。\n\n{financial_news}")
+                        logger.info(f"✅ [基本面补全] 成功补充业绩公告")
+                    else:
+                        logger.info(f"⚠️ [基本面补全] 未找到显著的业绩公告")
+
+                except Exception as news_e:
+                    logger.warning(f"⚠️ [基本面补全] 获取研报分析失败: {news_e}")
 
                 # 备用方案：基础港股信息
                 if not hk_data_success:

@@ -113,7 +113,7 @@ def get_provider_and_url_by_model_sync(model_name: str) -> dict:
         from app.core.config import settings
         import os
 
-        client = MongoClient(settings.MONGO_URI)
+        client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=100, connectTimeoutMS=100)
         db = client[settings.MONGO_DB]
 
         # 查询最新的活跃配置
@@ -179,7 +179,7 @@ def get_provider_and_url_by_model_sync(model_name: str) -> dict:
 
         # 尝试从厂家配置中获取 default_base_url 和 API Key
         try:
-            client = MongoClient(settings.MONGO_URI)
+            client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=100, connectTimeoutMS=100)
             db = client[settings.MONGO_DB]
             providers_collection = db.llm_providers
             provider_doc = providers_collection.find_one({"name": provider})
@@ -229,7 +229,7 @@ def get_provider_and_url_by_model_sync(model_name: str) -> dict:
             from pymongo import MongoClient
             from app.core.config import settings
 
-            client = MongoClient(settings.MONGO_URI)
+            client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=100, connectTimeoutMS=100)
             db = client[settings.MONGO_DB]
             providers_collection = db.llm_providers
             provider_doc = providers_collection.find_one({"name": provider})

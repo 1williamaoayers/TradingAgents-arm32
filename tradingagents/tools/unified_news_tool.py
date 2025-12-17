@@ -99,6 +99,52 @@ class UnifiedNewsAnalyzer:
         else:
             return "A股"
     
+    def _search_news_with_serper(self, query: str, period: str = "qdr:w") -> str:
+        """
+        使用Serper API搜索新闻
+        Args:
+            query: 搜索关键词
+            period: 时间范围，默认为过去一周 (qdr:w)，可选 qdr:d (一天), qdr:m (一月)
+        """
+        try:
+            import os
+            api_key = os.getenv("SERPER_API_KEY")
+            if not api_key:
+                return ""
+                
+            url = "https://google.serper.dev/search"
+            headers = {
+                'X-API-KEY': api_key,
+                'Content-Type': 'application/json'
+            }
+            
+            payload = json.dumps({
+                "q": query,
+                "tbs": period,
+                "num": 10
+            })
+            
+            response = requests.post(url, headers=headers, data=payload, timeout=10)
+            if response.status_code != 200:
+                return ""
+                
+            results = response.json().get('organic', [])
+            if not results:
+                return ""
+                
+            formatted = []
+            for item in results:
+                title = item.get('title', '')
+                snippet = item.get('snippet', '')
+                link = item.get('link', '')
+                date = item.get('date', '')
+                formatted.append(f"### {title}\n- **来源**: {link}\n- **时间**: {date}\n- **摘要**: {snippet}\n")
+                
+            return "\n".join(formatted)
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] Serper搜索失败: {e}")
+            return ""
+
     def _get_company_name_from_code(self, stock_code: str) -> str:
         """
         根据股票代码获取公司名称
@@ -484,16 +530,25 @@ class UnifiedNewsAnalyzer:
         except Exception as e:
             logger.warning(f"[统一新闻工具] 东方财富新闻获取失败: {e}")
         
-        # 优先级2: Google新闻（中文搜索）
+        # 优先级2: Google新闻（优先使用Serper API，回退到普通爬虫）
         try:
+            logger.info(f"[统一新闻工具] 尝试Google新闻 (Serper API)...")
+            query = f"{stock_code} 股票 新闻 财报"
+            
+            # 1. 尝试使用 Serper API
+            serper_result = self._search_news_with_serper(query, period="qdr:w")
+            if serper_result and len(serper_result) > 50:
+                logger.info(f"[统一新闻工具] ✅ Serper新闻获取成功: {len(serper_result)} 字符")
+                return self._format_news_result(serper_result, "Google/Serper新闻", model_info)
+            
+            # 2. 回退到普通爬虫
             if hasattr(self.toolkit, 'get_google_news'):
-                logger.info(f"[统一新闻工具] 尝试Google新闻...")
-                query = f"{stock_code} 股票 新闻 财报 业绩"
+                logger.info(f"[统一新闻工具] Serper无结果，尝试Google新闻爬虫...")
                 # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
                 result = self.toolkit.get_google_news.invoke({"query": query, "curr_date": curr_date})
                 if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ Google新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "Google新闻", model_info)
+                    logger.info(f"[统一新闻工具] ✅ Google新闻爬虫获取成功: {len(result)} 字符")
+                    return self._format_news_result(result, "Google新闻(爬虫)", model_info)
         except Exception as e:
             logger.warning(f"[统一新闻工具] Google新闻获取失败: {e}")
         
@@ -567,16 +622,25 @@ class UnifiedNewsAnalyzer:
         except Exception as e:
             logger.warning(f"[统一新闻工具] Alpha Vantage个股新闻获取失败: {e}")
         
-        # 优先级2: Google新闻（港股搜索）
+        # 优先级2: Google新闻（优先使用Serper API，回退到普通爬虫）
         try:
+            logger.info(f"[统一新闻工具] 尝试Google港股新闻 (Serper API)...")
+            query = f"{stock_code} 港股 香港股票 新闻"
+            
+            # 1. 尝试使用 Serper API
+            serper_result = self._search_news_with_serper(query, period="qdr:w")
+            if serper_result and len(serper_result) > 50:
+                logger.info(f"[统一新闻工具] ✅ Serper港股新闻获取成功: {len(serper_result)} 字符")
+                return self._format_news_result(serper_result, "Google/Serper港股新闻", model_info)
+            
+            # 2. 回退到普通爬虫
             if hasattr(self.toolkit, 'get_google_news'):
-                logger.info(f"[统一新闻工具] 尝试Google港股新闻...")
-                query = f"{stock_code} 港股 香港股票 新闻"
+                logger.info(f"[统一新闻工具] Serper无结果，尝试Google新闻爬虫...")
                 # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
                 result = self.toolkit.get_google_news.invoke({"query": query, "curr_date": curr_date})
                 if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ Google港股新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "Google港股新闻", model_info)
+                    logger.info(f"[统一新闻工具] ✅ Google港股新闻爬虫获取成功: {len(result)} 字符")
+                    return self._format_news_result(result, "Google港股新闻(爬虫)", model_info)
         except Exception as e:
             logger.warning(f"[统一新闻工具] Google港股新闻获取失败: {e}")
         
@@ -716,13 +780,23 @@ class UnifiedNewsAnalyzer:
                         stock_name = re.sub(r'(集团|股份|有限公司|－.*|-.*|\(.*\)|（.*）)', '', stock_name)
                         stock_name = stock_name.strip()
                     
-                    # 构造 Google Dorks 查询 (雪球 + 股吧)
-                    base_query = f'"{clean_ticker}"'
-                    if stock_name and stock_name != ticker:
-                        base_query += f' "{stock_name}"'
+                    # 构造优化的搜索查询 (全网搜索，更宽松的关键词)
+                    # 策略：使用公司名+情绪相关关键词，不限定特定网站
+                    search_queries = []
                     
-                    search_query = f'{base_query} 走势 观点 site:xueqiu.com OR site:guba.eastmoney.com'
-                    logger.info(f"🔍 [Serper] 搜索Query: {search_query}")
+                    # 第一优先级：公司名 + 投资讨论关键词 (全网)
+                    if stock_name and stock_name != ticker:
+                        search_queries.append(f'{stock_name} 投资 分析 讨论')
+                        search_queries.append(f'{stock_name} 股票 观点 评论')
+                    
+                    # 第二优先级：股票代码 + 关键词
+                    search_queries.append(f'{clean_ticker} 股票 分析 观点')
+                    
+                    # 第三优先级：公司名 + 雪球/股吧 (作为fallback)
+                    if stock_name and stock_name != ticker:
+                        search_queries.append(f'{stock_name} site:xueqiu.com OR site:guba.eastmoney.com')
+                    
+                    logger.info(f"🔍 [Serper] 准备执行 {len(search_queries)} 个搜索策略")
                     
                     url = "https://google.serper.dev/search"
                     headers = {
@@ -730,23 +804,39 @@ class UnifiedNewsAnalyzer:
                         'Content-Type': 'application/json'
                     }
                     
-                    def perform_search(query):
+                    def perform_search(query, time_range="qdr:w"):
+                        """执行搜索，默认过去一周"""
                         payload = json.dumps({
                             "q": query,
-                            "tbs": "qdr:d",  # 过去24小时
-                            "num": 20        # 获取更多结果
+                            "tbs": time_range,
+                            "num": 15
                         })
-                        response = requests.request("POST", url, headers=headers, data=payload)
+                        response = requests.request("POST", url, headers=headers, data=payload, timeout=10)
                         return response.json().get('organic', [])
-
-                    organic_results = perform_search(search_query)
                     
-                    # 如果没有结果，尝试放宽查询条件 (去掉"走势 观点")
-                    if not organic_results:
-                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，尝试放宽查询条件...")
-                        search_query = f'{base_query} site:xueqiu.com OR site:guba.eastmoney.com'
-                        logger.info(f"🔍 [Serper] 搜索Query (Fallback): {search_query}")
-                        organic_results = perform_search(search_query)
+                    organic_results = []
+                    successful_query = None
+                    
+                    # 依次尝试各个查询策略
+                    for query in search_queries:
+                        logger.info(f"🔍 [Serper] 尝试查询: {query}")
+                        results = perform_search(query)
+                        if results:
+                            organic_results = results
+                            successful_query = query
+                            logger.info(f"✅ [Serper] 查询成功，获取 {len(results)} 条结果")
+                            break
+                        else:
+                            logger.warning(f"⚠️ [Serper] 查询无结果: {query}")
+                    
+                    # 如果所有策略都失败，尝试更宽松的查询 (过去一个月)
+                    if not organic_results and stock_name:
+                        logger.warning(f"⚠️ [Serper] 所有策略失败，尝试更宽松查询 (过去一个月)")
+                        fallback_query = f'{stock_name} 股票'
+                        organic_results = perform_search(fallback_query, "qdr:m")
+                        if organic_results:
+                            successful_query = fallback_query
+                            logger.info(f"✅ [Serper] 宽松查询成功，获取 {len(organic_results)} 条结果")
                     
                     if organic_results:
                         discussions = []
@@ -755,39 +845,65 @@ class UnifiedNewsAnalyzer:
                             snippet = item.get('snippet', '')
                             source = item.get('link', '')
                             
-                            # 识别来源平台
-                            platform = "未知"
+                            # 智能识别来源平台
+                            platform = "网络"
                             if "xueqiu.com" in source:
                                 platform = "雪球"
-                            elif "eastmoney.com" in source:
+                            elif "eastmoney.com" in source or "guba" in source:
                                 platform = "股吧"
+                            elif "sina.com" in source:
+                                platform = "新浪"
+                            elif "163.com" in source:
+                                platform = "网易"
+                            elif "qq.com" in source:
+                                platform = "腾讯"
+                            elif "baidu.com" in source or "baijiahao" in source:
+                                platform = "百度"
+                            elif "zhihu.com" in source:
+                                platform = "知乎"
+                            elif "toutiao.com" in source:
+                                platform = "头条"
+                            elif "weibo.com" in source:
+                                platform = "微博"
+                            elif "36kr.com" in source:
+                                platform = "36氪"
+                            elif "wallstreetcn.com" in source:
+                                platform = "华尔街见闻"
+                            elif "cls.cn" in source:
+                                platform = "财联社"
                                 
                             discussions.append(f"- [{platform}] **{title}**: {snippet}")
                         
                         discussion_text = "\n".join(discussions)
                         
                         sentiment_summary = f"""
-## 中文市场散户情绪分析 (Serper搜索结果)
+## 市场情绪与投资者观点分析 (Serper全网搜索)
 
 **股票**: {ticker} ({stock_name})
-**分析日期**: {curr_date} (最近24小时)
+**分析日期**: {curr_date}
+**搜索策略**: {successful_query}
+**结果数量**: {len(organic_results)} 条
 
-### 散户讨论热点
+### 投资者讨论与观点
 {discussion_text}
 
-### 情绪综述
-基于上述搜索结果，请LLM自行总结投资者情绪（乐观/悲观/中性）及主要关注点。
+### 情绪分析要求
+请基于上述搜索结果，分析：
+1. 投资者整体情绪倾向（乐观/悲观/中性）
+2. 主要关注点和讨论话题
+3. 潜在的风险点或利好因素
 """
                         result_data.append(sentiment_summary)
                         response_dict["content"] = sentiment_summary
                         response_dict["status"] = "success"
-                        response_dict["source"] = "Serper/Google"
-                        logger.info(f"✅ [Serper] 成功获取 {len(organic_results)} 条散户讨论")
+                        response_dict["source"] = "Serper/Google全网搜索"
+                        logger.info(f"✅ [Serper] 成功获取 {len(organic_results)} 条投资者讨论")
                     else:
-                        logger.warning(f"⚠️ [Serper] 未搜索到相关讨论，返回默认中性Dict")
-                        response_dict["summary"] = f"当前暂无股票 {ticker} 的详细中文社交媒体数据，系统默认给予中性评级。请以市场客观指标为准。"
+                        logger.warning(f"⚠️ [Serper] 所有搜索策略均无结果，返回默认中性评级")
+                        response_dict["summary"] = f"当前暂无股票 {ticker} ({stock_name}) 的详细市场情绪数据，系统默认给予中性评级。请以市场客观指标为准。"
                         response_dict["company_name_check"] = f"请严格基于股票代码 {ticker} 确认公司名称，禁止臆测"
                         return response_dict
+
 
                 except Exception as e:
                     logger.error(f"❌ [Serper] 搜索失败: {e}")
@@ -990,10 +1106,9 @@ def create_unified_news_tool(toolkit):
             stock_code (str): 股票代码 (支持A股如000001、港股如0700.HK、美股如AAPL)
             max_news (int): 最大新闻数量，默认100
             model_info (str): 当前使用的模型信息，用于特殊处理
-        
-        Returns:
-            str: 格式化的新闻内容
         """
+        
+
         if not stock_code:
             return "❌ 错误: 未提供股票代码"
         
@@ -1023,8 +1138,6 @@ def create_unified_news_tool(toolkit):
             ticker: 股票代码
             curr_date: 当前日期
             
-        Returns:
-            str: 格式化的情绪分析内容
         """
         if not ticker:
             return "❌ 错误: 未提供股票代码"
