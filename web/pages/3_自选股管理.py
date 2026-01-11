@@ -39,45 +39,51 @@ def check_database_connection():
 
 
 def fetch_watchlist_from_db():
-    """从 MongoDB 获取自选股列表"""
+    """从 MongoDB 获取自选股列表（包含真实新闻数量）"""
     try:
         from pymongo import MongoClient
         
-        # 强制使用 localhost，与验证脚本保持一致
         mongo_uri = "mongodb://admin:tradingagents123@mongodb:27017/?authSource=admin"
-        
-        print(f"[DEBUG] fetch_watchlist 连接: {mongo_uri}")  # 调试输出
         
         client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
         db = client["tradingagents"]
         
-        # 使用默认用户 ID（后续可以改为真实用户认证）
+        # 使用默认用户 ID
         user_id = "default_user"
         user_doc = db.user_favorites.find_one({"user_id": user_id})
         
-        client.close()
+        if not user_doc:
+            client.close()
+            return []
         
-        if user_doc:
-            favorites = user_doc.get("favorites", [])
-            # 转换为前端格式
-            return [
-                {
-                    "symbol": fav.get("stock_code"),
-                    "stock_name": fav.get("stock_name", fav.get("stock_code")),
-                    "market": fav.get("market", "港股"),
-                    "added_date": fav.get("added_at").strftime("%Y-%m-%d") 
-                        if isinstance(fav.get("added_at"), datetime) 
-                        else str(fav.get("added_at", ""))[:10],
-                    "news_count": 0,
-                    "tags": fav.get("tags", []),
-                    "notes": fav.get("notes", "")
-                }
-                for fav in favorites
-            ]
-        return []
+        favorites = user_doc.get("favorites", [])
+        result = []
+        
+        for fav in favorites:
+            stock_code = fav.get("stock_code")
+            
+            # 🔥 查询真实新闻数量
+            news_count = db.stock_news.count_documents({"symbol": stock_code})
+            
+            result.append({
+                "symbol": stock_code,
+                "stock_name": fav.get("stock_name", stock_code),
+                "market": fav.get("market", "港股"),
+                "added_date": fav.get("added_at").strftime("%Y-%m-%d") 
+                    if isinstance(fav.get("added_at"), datetime) 
+                    else str(fav.get("added_at", ""))[:10],
+                "news_count": news_count,  # 🔥 使用真实数量
+                "tags": fav.get("tags", []),
+                "notes": fav.get("notes", "")
+            })
+        
+        client.close()
+        return result
+        
     except Exception as e:
         st.error(f"❌ 获取自选股失败: {e}")
         return []
+
 
 
 def add_stock_to_db(symbol, market):
@@ -382,27 +388,30 @@ def render_watchlist_management():
         )
     
     with col2:
-        st.markdown("**⏰ 收集时间**")
-        st.caption("支持设置多个时间点")
+        st.markdown("**⏰ 收集时间**（北京时间）")
+        st.caption("支持设置多个时间点，格式：HH:MM（如 08:30）")
         
         # 显示现有时间
         times_to_remove = []
         for i, time_str in enumerate(st.session_state.schedule_times):
             col_time, col_del = st.columns([4, 1])
             with col_time:
-                try:
-                    default_time = datetime.strptime(time_str, "%H:%M").time()
-                except:
-                    default_time = datetime.strptime("02:00", "%H:%M").time()
-                
-                new_time = st.time_input(
+                # 使用文本输入框，用户可以自由输入
+                new_time = st.text_input(
                     f"时间 {i+1}",
-                    value=default_time,
+                    value=time_str,
                     key=f"time_{i}",
+                    placeholder="HH:MM",
                     label_visibility="collapsed"
                 )
-                # 更新时间
-                st.session_state.schedule_times[i] = new_time.strftime("%H:%M")
+                # 验证并更新时间格式
+                try:
+                    # 验证格式是否正确
+                    datetime.strptime(new_time.strip(), "%H:%M")
+                    st.session_state.schedule_times[i] = new_time.strip()
+                except:
+                    if new_time.strip():
+                        st.warning(f"⚠️ 时间格式错误，请使用 HH:MM 格式")
             
             with col_del:
                 if len(st.session_state.schedule_times) > 1:  # 至少保留一个时间
@@ -418,6 +427,7 @@ def render_watchlist_management():
         if st.button("➕ 添加时间", use_container_width=True):
             st.session_state.schedule_times.append("12:00")
             st.rerun()
+
     
     # 保存按钮
     if st.button("💾 保存设置", use_container_width=True, type="primary"):
@@ -458,22 +468,41 @@ def render_watchlist_management():
     st.markdown("---")
     st.subheader("📊 统计信息")
     
+    # 从数据库查询真实统计
+    try:
+        mongo_uri = "mongodb://admin:tradingagents123@mongodb:27017/?authSource=admin"
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
+        db = client["tradingagents"]
+        
+        # 自选股代码列表
+        watchlist_symbols = [s["symbol"] for s in st.session_state.watchlist]
+        
+        # 新闻总数（只统计自选股的）
+        total_news = db.stock_news.count_documents({"symbol": {"$in": watchlist_symbols}}) if watchlist_symbols else 0
+        
+        # 分析报告总数（查询analysis_results集合）
+        total_analysis = db.analysis_results.count_documents({"symbol": {"$in": watchlist_symbols}}) if watchlist_symbols else 0
+        
+        client.close()
+    except Exception as e:
+        total_news = sum(s.get("news_count", 0) for s in st.session_state.watchlist)
+        total_analysis = 0
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("自选股总数", len(st.session_state.watchlist))
     
     with col2:
-        a_count = len([s for s in st.session_state.watchlist if s["market"] == "A股"])
-        st.metric("A股", a_count)
+        st.metric("新闻总数", total_news)
     
     with col3:
-        hk_count = len([s for s in st.session_state.watchlist if s["market"] == "港股"])
-        st.metric("港股", hk_count)
+        st.metric("分析报告", total_analysis)
     
     with col4:
-        us_count = len([s for s in st.session_state.watchlist if s["market"] == "美股"])
-        st.metric("美股", us_count)
+        hk_count = len([s for s in st.session_state.watchlist if s["market"] == "港股"])
+        st.metric("港股", hk_count)
+
     
     # 底部信息
     st.markdown("---")
