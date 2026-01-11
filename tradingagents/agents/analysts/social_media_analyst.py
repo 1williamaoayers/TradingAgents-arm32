@@ -1,6 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
+import inspect
 
 # 导入统一日志系统和分析模块日志装饰器
 from tradingagents.utils.logging_init import get_logger
@@ -108,10 +109,30 @@ def create_social_media_analyst(llm, toolkit):
         company_name = _get_company_name_for_social_media(ticker, market_info)
         logger.info(f"[社交媒体分析师] 公司名称: {company_name}")
 
-        # 🔥 使用新的统一情绪分析工具（Alpha Vantage）
-        logger.info(f"[社交媒体分析师] 使用Alpha Vantage情绪分析工具")
-        from tradingagents.dataflows.tools.sentiment_tools import get_combined_sentiment
-        tools = [get_combined_sentiment]
+        def _invoke_tool(tool, args: dict):
+            if hasattr(tool, 'invoke'):
+                return tool.invoke(args)
+            if callable(tool):
+                try:
+                    sig = inspect.signature(tool)
+                    filtered_args = {k: v for k, v in (args or {}).items() if k in sig.parameters}
+                    return tool(**filtered_args)
+                except Exception:
+                    return tool(**(args or {}))
+            raise TypeError(f"Unsupported tool type: {type(tool)}")
+
+        # 🔥 使用更稳健的多数据源情绪分析：优先统一情绪工具，失败时可降级到新闻/中文市场情绪
+        from tradingagents.tools.unified_news_tool import create_unified_news_tool
+        unified_news_tool, unified_sentiment_tool = create_unified_news_tool(toolkit)
+
+        tools = []
+        if market_info['is_us']:
+            logger.info(f"[社交媒体分析师] 使用多数据源情绪分析（美股优先Alpha Vantage/备用新闻）")
+            from tradingagents.dataflows.tools.sentiment_tools import get_combined_sentiment
+            tools = [get_combined_sentiment, unified_news_tool]
+        else:
+            logger.info(f"[社交媒体分析师] 使用多数据源情绪分析（A股/港股优先中文市场情绪/备用新闻）")
+            tools = [unified_sentiment_tool, toolkit.get_chinese_social_sentiment, unified_news_tool]
 
         system_message = (
             """您是一位专业的中国市场社交媒体和投资情绪分析师，负责分析中国投资者对特定股票的讨论和情绪变化。
@@ -152,7 +173,7 @@ def create_social_media_analyst(llm, toolkit):
 - 基于情绪的交易时机建议
 
 请撰写详细的中文分析报告，并在报告末尾附上Markdown表格总结关键发现。
-注意：由于中国社交媒体API限制，如果数据获取受限，请明确说明并提供替代分析建议。"""
+注意：如果社交媒体数据获取受限（如显示数据不足或API限制），**请务必使用提供的【财经新闻】数据**来推断市场舆论倾向和投资者关注点。即使没有直接的社交媒体评论，也要通过新闻报道的语气、频率和主题来分析市场情绪，切勿仅仅回复“无法分析”或“建议参考其他数据”。您的目标是在数据有限的情况下，依然通过新闻舆情提供有价值的洞察。"""
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -166,7 +187,15 @@ def create_social_media_analyst(llm, toolkit):
                     " 如果您或任何其他助手有最终交易提案：**买入/持有/卖出**或可交付成果，"
                     " 请在您的回应前加上最终交易提案：**买入/持有/卖出**，以便团队知道停止。"
                     " 您可以访问以下工具：{tool_names}。\n{system_message}"
-                    "供您参考，当前日期是{current_date}。我们要分析的当前公司是{ticker}。请用中文撰写所有分析内容。",
+                    "\n\n📋 分析对象（必须严格遵守，不得混淆为其他股票）："
+                    "\n- 公司名称：{company_name}"
+                    "\n- 股票代码：{ticker}"
+                    "\n- 所属市场：{market_name}"
+                    "\n\n⚠️ 身份识别强制约束："
+                    "\n1. 你分析的唯一对象是 **{company_name}**（代码 {ticker}）。"
+                    "\n2. **绝对禁止**混淆为其他市场的同名或同代码股票。"
+                    "\n3. 如果代码是纯数字（如 01810），必须结合其所属市场（港股）确认为“小米集团”，而不是其他可能的含义。"
+                    "\n\n供您参考，当前日期是{current_date}。请用中文撰写所有分析内容。",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
@@ -186,6 +215,8 @@ def create_social_media_analyst(llm, toolkit):
         prompt = prompt.partial(tool_names=", ".join(tool_names))
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(ticker=ticker)
+        prompt = prompt.partial(company_name=company_name)
+        prompt = prompt.partial(market_name=market_info['market_name'])
 
         chain = prompt | llm.bind_tools(tools)
 
@@ -219,9 +250,109 @@ def create_social_media_analyst(llm, toolkit):
             
             # 处理情绪分析报告
             if len(result.tool_calls) == 0:
-                # 没有工具调用，直接使用LLM的回复
-                report = result.content
-                logger.info(f"📊 [社交媒体分析师] ✅ 直接回复（无工具调用），长度: {len(report)}")
+                # 没有工具调用：强制拉取一次情绪/新闻数据，避免输出无数据的空泛报告
+                logger.warning(f"📊 [社交媒体分析师] ⚠️ 未检测到工具调用，执行强制数据获取以提升报告质量")
+                try:
+                    from langchain_core.messages import ToolMessage
+
+                    forced_tool = None
+                    forced_args = None
+                    fallback_tool = None
+                    fallback_args = None
+
+                    if market_info['is_us']:
+                        forced_tool = next((t for t in tools if getattr(t, 'name', getattr(t, '__name__', '')) == 'get_combined_sentiment'), None)
+                        forced_args = {"ticker": ticker}
+                    else:
+                        fallback_tool = next((t for t in tools if getattr(t, 'name', getattr(t, '__name__', '')) == 'get_chinese_social_sentiment'), None)
+                        fallback_args = {"ticker": ticker, "curr_date": current_date}
+
+                        # 优先尝试 Serper 统一情绪（更像“社交媒体”），但如果没配置 key 直接降级
+                        import os
+                        serper_api_key = os.getenv("SERPER_API_KEY")
+                        if serper_api_key:
+                            forced_tool = next((t for t in tools if getattr(t, 'name', getattr(t, '__name__', '')) == 'get_stock_sentiment_unified'), None)
+                            forced_args = {"ticker": ticker, "curr_date": current_date}
+                        else:
+                            forced_tool = fallback_tool
+                            forced_args = fallback_args
+
+                    if forced_tool is None:
+                        raise RuntimeError("No available sentiment tool for forced fetch")
+
+                    forced_result = _invoke_tool(forced_tool, forced_args)
+
+                    # 如果美股情绪工具不可用（例如缺少ALPHA_VANTAGE_API_KEY），降级到统一新闻
+                    if market_info['is_us']:
+                        forced_result_str = str(forced_result)
+                        forced_result_is_error = False
+                        if isinstance(forced_result, dict) and forced_result.get("status") == "error":
+                            forced_result_is_error = True
+                        if "ALPHA_VANTAGE_API_KEY" in forced_result_str or "API Key" in forced_result_str or "未配置" in forced_result_str:
+                            forced_result_is_error = True
+                        if forced_result_is_error:
+                            logger.warning("📊 [社交媒体分析师] ⚠️ Alpha Vantage情绪不可用，降级到统一新闻工具")
+                            news_tool = next((t for t in tools if getattr(t, 'name', getattr(t, '__name__', '')) == 'get_stock_news_unified'), None)
+                            if news_tool is not None:
+                                forced_result = _invoke_tool(news_tool, {"stock_code": ticker, "max_news": 36})
+
+                    # 如果统一情绪工具返回错误（例如缺少SERPER_API_KEY），尝试降级到中文市场情绪
+                    if (not market_info['is_us']) and fallback_tool is not None and fallback_tool is not forced_tool:
+                        forced_result_str = str(forced_result)
+                        forced_result_is_error = False
+                        if isinstance(forced_result, dict) and forced_result.get("status") == "error":
+                            forced_result_is_error = True
+                        if "SERPER_API_KEY" in forced_result_str or "未配置SERPER_API_KEY" in forced_result_str:
+                            forced_result_is_error = True
+                        if forced_result_is_error:
+                            logger.warning("📊 [社交媒体分析师] ⚠️ 统一情绪工具不可用，降级到中文市场情绪工具")
+                            forced_result = _invoke_tool(fallback_tool, fallback_args)
+
+                    tool_messages_for_report = [ToolMessage(content=str(forced_result), tool_call_id="forced_social_sentiment")]
+
+                    # 如果中文市场情绪数据仍然过短/信息量不足，补充统一新闻数据
+                    if not market_info['is_us']:
+                        forced_result_str = str(forced_result)
+                        sentiment_too_short = len(forced_result_str.strip()) < 400
+                        sentiment_seems_limited = ("数据获取限制" in forced_result_str) or ("API" in forced_result_str) or ("新闻数量: 0" in forced_result_str) or ("数据不足" in forced_result_str)
+                        if sentiment_too_short or sentiment_seems_limited:
+                            news_tool = next((t for t in tools if getattr(t, 'name', getattr(t, '__name__', '')) == 'get_stock_news_unified'), None)
+                            if news_tool is not None:
+                                logger.info("📊 [社交媒体分析师] 补充获取统一新闻数据以提升报告质量")
+                                news_result = _invoke_tool(news_tool, {"stock_code": ticker, "max_news": 36})
+                                tool_messages_for_report.append(ToolMessage(content=str(news_result), tool_call_id="forced_social_news"))
+
+                    updated_messages = state["messages"] + tool_messages_for_report
+
+                    final_prompt = ChatPromptTemplate.from_messages([
+                        (
+                            "system",
+                            "你是一位专业的社交媒体和投资情绪分析师。"
+                            "\n\n📋 分析对象（必须严格遵守，不得混淆为其他股票）："
+                            "\n- 公司名称：{company_name}"
+                            "\n- 股票代码：{ticker}"
+                            "\n- 所属市场：{market_name}"
+                            "\n\n⚠️ 身份识别强制约束："
+                            "\n1. 你分析的唯一对象是 **{company_name}**（代码 {ticker}）。"
+                            "\n2. **绝对禁止**混淆为其他市场的同名或同代码股票。"
+                            "\n\n请基于提供的工具数据，生成一份完整的市场情绪分析报告。"
+                        ),
+                        MessagesPlaceholder(variable_name="messages"),
+                        ("human", "请基于上述工具数据，生成完整的市场情绪分析报告。")
+                    ])
+
+                    final_chain = (
+                        final_prompt.partial(company_name=company_name)
+                        .partial(ticker=ticker)
+                        .partial(market_name=market_info['market_name'])
+                        | llm
+                    )
+                    final_result = final_chain.invoke({"messages": updated_messages})
+                    report = final_result.content
+                    logger.info(f"📊 [社交媒体分析师] ✅ 强制数据获取后报告生成完成，长度: {len(report)}")
+                except Exception as e:
+                    report = result.content
+                    logger.error(f"❌ [社交媒体分析师] 强制数据获取失败，回退到直接回复: {e}")
             else:
                 # 有工具调用，执行工具并生成完整分析报告
                 logger.info(f"📊 [社交媒体分析师] 🔧 检测到工具调用: {[call.get('name', 'unknown') for call in result.tool_calls]}")
@@ -250,7 +381,7 @@ def create_social_media_analyst(llm, toolkit):
 
                             if current_tool_name == tool_name:
                                 try:
-                                    tool_result = tool.invoke(tool_args)
+                                    tool_result = _invoke_tool(tool, tool_args)
                                     logger.info(f"📊 [社交媒体分析师] 工具执行成功，结果长度: {len(str(tool_result))}")
                                     break
                                 except Exception as tool_error:
@@ -275,12 +406,28 @@ def create_social_media_analyst(llm, toolkit):
                     # 要求LLM基于工具结果生成最终报告
                     logger.info(f"📊 [社交媒体分析师] 要求LLM生成最终报告...")
                     final_prompt = ChatPromptTemplate.from_messages([
-                        ("system", "你是一位专业的社交媒体和投资情绪分析师。请基于工具返回的数据，生成一份完整的市场情绪分析报告。"),
+                        (
+                            "system",
+                            "你是一位专业的社交媒体和投资情绪分析师。"
+                            "\n\n📋 分析对象（必须严格遵守，不得混淆为其他股票）："
+                            "\n- 公司名称：{company_name}"
+                            "\n- 股票代码：{ticker}"
+                            "\n- 所属市场：{market_name}"
+                            "\n\n⚠️ 身份识别强制约束："
+                            "\n1. 你分析的唯一对象是 **{company_name}**（代码 {ticker}）。"
+                            "\n2. **绝对禁止**混淆为其他市场的同名或同代码股票。"
+                            "\n\n请基于工具返回的数据，生成一份完整的市场情绪分析报告。"
+                        ),
                         MessagesPlaceholder(variable_name="messages"),
                         ("human", "请基于上述工具数据，生成完整的市场情绪分析报告。")
                     ])
 
-                    final_chain = final_prompt | llm
+                    final_chain = (
+                        final_prompt.partial(company_name=company_name)
+                        .partial(ticker=ticker)
+                        .partial(market_name=market_info['market_name'])
+                        | llm
+                    )
                     final_result = final_chain.invoke({"messages": updated_messages})
                     report = final_result.content
                     logger.info(f"📊 [社交媒体分析师] ✅ 最终报告生成完成，长度: {len(report)}")

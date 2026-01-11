@@ -5,10 +5,22 @@
 """
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import plotly.express as px
 from pymongo import MongoClient
 import os
+
+# 北京时区 (UTC+8)
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+def utc_to_beijing(utc_time):
+    """将UTC时间转换为北京时间"""
+    if utc_time is None:
+        return None
+    if utc_time.tzinfo is None:
+        utc_time = utc_time.replace(tzinfo=timezone.utc)
+    return utc_time.astimezone(BEIJING_TZ)
+
 
 # 页面配置
 st.set_page_config(
@@ -127,8 +139,16 @@ def get_sync_history():
     history = []
     
     for record in db.news_sync_history.find({}).sort("sync_time", -1).limit(10):
+        sync_time = record.get("sync_time")
+        if sync_time:
+            # 转换为北京时间
+            beijing_time = utc_to_beijing(sync_time)
+            time_str = beijing_time.strftime("%Y-%m-%d %H:%M") + " (北京时间)"
+        else:
+            time_str = "N/A"
+            
         history.append({
-            "sync_time": record.get("sync_time").strftime("%Y-%m-%d %H:%M") if record.get("sync_time") else "N/A",
+            "sync_time": time_str,
             "sync_type": record.get("sync_type", "unknown"),
             "status": record.get("status", "unknown"),
             "news_count": record.get("news_count", 0),
@@ -141,12 +161,54 @@ def get_sync_history():
 st.title("📰 新闻同步监控")
 st.markdown("---")
 
-# 刷新按钮
-col_refresh1, col_refresh2 = st.columns([1, 9])
-with col_refresh1:
+# 手动同步函数
+def trigger_manual_sync():
+    """触发手动新闻同步（使用subprocess避免事件循环冲突）"""
+    import subprocess
+    import json
+    
+    # 调用独立的同步脚本
+    result = subprocess.run(
+        ["python3", "/app/app/scheduler/manual_sync.py"],
+        capture_output=True,
+        text=True,
+        timeout=120  # 2分钟超时
+    )
+    
+    if result.returncode != 0:
+        error_msg = result.stderr or result.stdout or "未知错误"
+        raise Exception(f"同步脚本执行失败: {error_msg}")
+    
+    # 解析JSON结果
+    try:
+        data = json.loads(result.stdout.strip())
+        if not data.get("success"):
+            raise Exception(data.get("error", "同步失败"))
+        return data
+    except json.JSONDecodeError:
+        raise Exception(f"无法解析同步结果: {result.stdout}")
+
+
+
+# 操作按钮区
+col_refresh, col_sync, col_empty = st.columns([1, 1, 8])
+
+with col_refresh:
     if st.button("🔄 刷新数据", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
+
+with col_sync:
+    if st.button("📥 立即同步", use_container_width=True, type="primary"):
+        with st.spinner("正在同步新闻数据..."):
+            try:
+                result = trigger_manual_sync()
+                st.success(f"✅ 同步完成！获取 {result.get('news_count', 0)} 条新闻")
+                st.cache_resource.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 同步失败: {str(e)}")
+
 
 # 获取数据
 try:

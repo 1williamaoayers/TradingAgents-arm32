@@ -154,15 +154,7 @@ class ChineseFinanceDataAggregator:
         # 例如：财联社、新浪财经、东方财富等
         
         # 模拟返回数据结构
-        return [
-            {
-                'title': f'{search_term}相关财经新闻标题',
-                'content': '新闻内容摘要...',
-                'source': '财联社',
-                'publish_time': datetime.now().isoformat(),
-                'url': 'https://example.com/news/1'
-            }
-        ]
+        return []
     
     def _get_media_coverage(self, ticker: str, days: int) -> List[Dict]:
         """获取媒体报道 (示例实现)"""

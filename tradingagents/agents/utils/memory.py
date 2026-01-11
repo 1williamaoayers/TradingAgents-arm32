@@ -1,5 +1,11 @@
-import chromadb
-from chromadb.config import Settings
+try:
+    import chromadb
+    from chromadb.config import Settings
+except ImportError:
+    chromadb = None
+except RuntimeError:
+    chromadb = None
+
 from openai import OpenAI
 import dashscope
 from dashscope import TextEmbedding
@@ -31,6 +37,12 @@ class ChromaDBManager:
 
     def __init__(self):
         if not self._initialized:
+            if chromadb is None:
+                logger.warning("📚 [ChromaDB] Library not available. Memory disabled.")
+                self._client = None
+                self._initialized = True
+                return
+
             try:
                 # 使用统一的配置模块
                 from .chromadb_config import get_optimal_chromadb_client, is_windows_11
@@ -69,6 +81,9 @@ class ChromaDBManager:
     def get_or_create_collection(self, name: str):
         """线程安全地获取或创建集合"""
         with self._lock:
+            if self._client is None:
+                return None
+
             if name in self._collections:
                 logger.info(f"📚 [ChromaDB] 使用缓存集合: {name}")
                 return self._collections[name]
@@ -564,6 +579,9 @@ class FinancialSituationMemory:
         ids = []
         embeddings = []
 
+        if self.situation_collection is None:
+            return
+
         offset = self.situation_collection.count()
 
         for i, (situation, recommendation) in enumerate(situations_and_advice):
@@ -591,6 +609,9 @@ class FinancialSituationMemory:
             return []
         
         # 检查是否有足够的数据进行查询
+        if self.situation_collection is None:
+            return []
+
         collection_count = self.situation_collection.count()
         if collection_count == 0:
             logger.debug(f"📭 记忆库为空，返回空结果")
@@ -642,7 +663,7 @@ class FinancialSituationMemory:
     def get_cache_info(self):
         """获取缓存相关信息，用于调试和监控"""
         info = {
-            'collection_count': self.situation_collection.count(),
+            'collection_count': self.situation_collection.count() if self.situation_collection else 0,
             'client_status': 'enabled' if self.client != "DISABLED" else 'disabled',
             'embedding_model': self.embedding,
             'provider': self.llm_provider

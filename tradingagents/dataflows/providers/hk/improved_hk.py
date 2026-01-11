@@ -504,6 +504,8 @@ def get_hk_stock_data_akshare(symbol: str, start_date: str = None, end_date: str
         # 标准化代码
         provider = get_improved_hk_provider()
         normalized_symbol = provider._normalize_hk_symbol(symbol)
+        # 去掉.HK后缀，stock_hk_hist需要纯数字代码
+        clean_symbol = normalized_symbol.replace('.HK', '')
 
         # 设置默认日期
         if not end_date:
@@ -511,14 +513,30 @@ def get_hk_stock_data_akshare(symbol: str, start_date: str = None, end_date: str
         if not start_date:
             start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
 
-        logger.info(f"🔄 [AKShare-新浪] 获取港股历史数据: {symbol} ({start_date} ~ {end_date})")
+        logger.info(f"🔄 [AKShare-东方财富] 获取港股历史数据: {symbol} ({start_date} ~ {end_date})")
 
-        # 使用新浪财经接口获取历史数据
-        df = ak.stock_hk_daily(symbol=normalized_symbol, adjust="qfq")
+        # 🔥 使用东方财富接口获取历史数据（数据更新更及时）
+        # stock_hk_hist 返回当天数据，stock_hk_daily 有1天延迟
+        df = ak.stock_hk_hist(symbol=clean_symbol, period='daily', adjust='qfq')
 
         if df is None or df.empty:
-            logger.warning(f"⚠️ [AKShare-新浪] 返回空数据: {symbol}")
+            logger.warning(f"⚠️ [AKShare-东方财富] 返回空数据: {symbol}")
             return f"❌ 无法获取港股{symbol}的历史数据"
+
+        # 🔥 统一字段名（东方财富返回中文列名）
+        df = df.rename(columns={
+            '日期': 'date',
+            '开盘': 'open',
+            '收盘': 'close',
+            '最高': 'high',
+            '最低': 'low',
+            '成交量': 'volume',
+            '成交额': 'amount',
+            '振幅': 'amplitude',
+            '涨跌幅': 'pct_change',
+            '涨跌额': 'change',
+            '换手率': 'turnover_rate'
+        })
 
         # 过滤日期范围
         df['date'] = pd.to_datetime(df['date'])
@@ -526,8 +544,9 @@ def get_hk_stock_data_akshare(symbol: str, start_date: str = None, end_date: str
         df = df.loc[mask]
 
         if df.empty:
-            logger.warning(f"⚠️ [AKShare-新浪] 日期范围内无数据: {symbol}")
+            logger.warning(f"⚠️ [AKShare-东方财富] 日期范围内无数据: {symbol}")
             return f"❌ 港股{symbol}在指定日期范围内无数据"
+
 
         # 🔥 添加 pre_close 字段（从前一天的 close 获取）
         # AKShare 不返回 pre_close 字段，需要手动计算
