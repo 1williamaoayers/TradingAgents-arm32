@@ -1366,50 +1366,128 @@ class UnifiedNewsAnalyzer:
             }
 
     def _get_us_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
-        """获取美股新闻"""
-        logger.info(f"[统一新闻工具] 获取美股 {stock_code} 新闻")
+        """
+        获取美股新闻 - 多源融合模式
+        数据源：FinnHub + Alpha Vantage + Serper + 智能去重
+        """
+        logger.info(f"[统一新闻工具] 🇺🇸 获取美股 {stock_code} 新闻（多源融合模式）")
         
-        # 获取当前日期
-        curr_date = datetime.now().strftime("%Y-%m-%d")
+        all_content_parts = []  # 收集所有数据源的内容
+        sources_used = []
         
-        # 优先级1: OpenAI全球新闻
+        # ==================== 数据源1: FinnHub新闻（最丰富）====================
         try:
-            if hasattr(self.toolkit, 'get_global_news_openai'):
-                logger.info(f"[统一新闻工具] 尝试OpenAI美股新闻...")
-                # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
-                result = self.toolkit.get_global_news_openai.invoke({"curr_date": curr_date})
-                if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ OpenAI美股新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "OpenAI美股新闻", model_info)
+            logger.info(f"[统一新闻工具] 📰 [1/4] 从FinnHub获取新闻...")
+            import requests
+            import os
+            from datetime import datetime, timedelta
+            
+            api_key = os.getenv('FINNHUB_API_KEY', '')
+            if api_key:
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+                url = f'https://finnhub.io/api/v1/company-news?symbol={stock_code}&from={start_date}&to={end_date}&token={api_key}'
+                
+                resp = requests.get(url, timeout=15)
+                if resp.status_code == 200:
+                    news_list = resp.json()
+                    if news_list and len(news_list) > 0:
+                        finnhub_content = f"=== 📰 FinnHub美股新闻 ===\n\n"
+                        for n in news_list[:15]:  # 取前15条
+                            headline = n.get('headline', '')
+                            source = n.get('source', '')
+                            summary = n.get('summary', '')[:200] + '...' if len(n.get('summary', '')) > 200 else n.get('summary', '')
+                            pub_time = datetime.fromtimestamp(n.get('datetime', 0)).strftime('%Y-%m-%d %H:%M') if n.get('datetime') else ''
+                            finnhub_content += f"### {headline}\n- **时间**: {pub_time}\n- **来源**: {source}\n- **摘要**: {summary}\n\n"
+                        
+                        logger.info(f"[统一新闻工具] ✅ FinnHub: {min(15, len(news_list))}条, {len(finnhub_content)} 字符")
+                        all_content_parts.append(("FinnHub", finnhub_content))
+                        sources_used.append("FinnHub")
+            else:
+                logger.warning("[统一新闻工具] ⚠️ FINNHUB_API_KEY未配置")
         except Exception as e:
-            logger.warning(f"[统一新闻工具] OpenAI美股新闻获取失败: {e}")
+            logger.warning(f"[统一新闻工具] ⚠️ FinnHub获取失败: {e}")
         
-        # 优先级2: Google新闻（英文搜索）
+        # ==================== 数据源2: Alpha Vantage新闻 ====================
         try:
-            if hasattr(self.toolkit, 'get_google_news'):
-                logger.info(f"[统一新闻工具] 尝试Google美股新闻...")
-                query = f"{stock_code} stock news earnings financial"
-                # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
-                result = self.toolkit.get_google_news.invoke({"query": query, "curr_date": curr_date})
-                if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ Google美股新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "Google美股新闻", model_info)
+            logger.info(f"[统一新闻工具] 📈 [2/4] 从Alpha Vantage获取新闻...")
+            from tradingagents.tools.alpha_vantage_news import get_alpha_vantage_news, format_alpha_vantage_news
+            av_news = get_alpha_vantage_news(ticker=stock_code, limit=10)
+            if av_news and len(av_news) > 0:
+                formatted = format_alpha_vantage_news(av_news, stock_code)
+                logger.info(f"[统一新闻工具] ✅ Alpha Vantage: {len(av_news)}条, {len(formatted)} 字符")
+                all_content_parts.append(("Alpha Vantage", formatted))
+                sources_used.append("Alpha Vantage")
         except Exception as e:
-            logger.warning(f"[统一新闻工具] Google美股新闻获取失败: {e}")
+            logger.warning(f"[统一新闻工具] ⚠️ Alpha Vantage获取失败: {e}")
         
-        # 优先级3: FinnHub新闻（如果可用）
+        # ==================== 数据源3: Serper实时搜索 ====================
         try:
-            if hasattr(self.toolkit, 'get_finnhub_news'):
-                logger.info(f"[统一新闻工具] 尝试FinnHub美股新闻...")
-                # 使用LangChain工具的正确调用方式：.invoke()方法和字典参数
-                result = self.toolkit.get_finnhub_news.invoke({"symbol": stock_code, "max_results": min(max_news, 50)})
-                if result and len(result.strip()) > 50:
-                    logger.info(f"[统一新闻工具] ✅ FinnHub美股新闻获取成功: {len(result)} 字符")
-                    return self._format_news_result(result, "FinnHub美股新闻", model_info)
+            logger.info(f"[统一新闻工具] 🔍 [3/4] 从Serper获取实时新闻...")
+            query = f"{stock_code} stock news earnings financial analysis"
+            serper_result = self._search_news_with_serper(query, period="qdr:d")  # 过去1天
+            if serper_result and len(serper_result) > 100:
+                logger.info(f"[统一新闻工具] ✅ Serper: {len(serper_result)} 字符")
+                all_content_parts.append(("Serper实时搜索", serper_result))
+                sources_used.append("Serper")
         except Exception as e:
-            logger.warning(f"[统一新闻工具] FinnHub美股新闻获取失败: {e}")
+            logger.warning(f"[统一新闻工具] ⚠️ Serper获取失败: {e}")
         
-        return "❌ 无法获取美股新闻数据，所有新闻源均不可用"
+        # ==================== 数据源4: 数据库缓存 ====================
+        try:
+            logger.info(f"[统一新闻工具] 📦 [4/4] 从数据库获取历史新闻...")
+            db_news = self._get_news_from_database(stock_code, 10, stock_code)
+            if db_news and len(db_news) > 100:
+                logger.info(f"[统一新闻工具] ✅ 数据库缓存: {len(db_news)} 字符")
+                all_content_parts.append(("数据库历史", db_news))
+                sources_used.append("数据库历史")
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] ⚠️ 数据库获取失败: {e}")
+        
+        # ==================== 融合所有数据源 ====================
+        if not all_content_parts:
+            logger.error(f"[统一新闻工具] ❌ 所有数据源均失败！")
+            return "❌ 无法获取美股新闻数据，所有新闻源均不可用"
+        
+        # 🔥 智能去重
+        deduplicator = NewsDeduplicator()
+        deduplicated_parts = []
+        total_before = 0
+        
+        for source_name, content in all_content_parts:
+            lines = content.split('\n')
+            kept_lines = []
+            for line in lines:
+                if line.startswith('###') or line.startswith('- **'):
+                    total_before += 1
+                    title = line.replace('###', '').replace('- **', '').strip()
+                    if deduplicator.check_and_add(title):
+                        kept_lines.append(line)
+                else:
+                    kept_lines.append(line)
+            deduplicated_parts.append((source_name, '\n'.join(kept_lines)))
+        
+        stats = deduplicator.get_stats()
+        logger.info(f"[统一新闻工具] 🔄 智能去重: {stats['duplicates_removed']} 条重复已移除 (原{stats['total_checked']}条 → {stats['unique_kept']}条)")
+        
+        # 构建最终报告
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        final_report = f"""# {stock_code} 综合新闻报告 (多源融合+智能去重)
+
+📅 生成时间: {timestamp}
+📊 数据来源: {', '.join(sources_used)} ({len(sources_used)}个)
+📏 总数据量: {sum(len(c) for _, c in deduplicated_parts)} 字符
+🔄 去重统计: {stats['duplicates_removed']} 条重复已移除
+
+---
+
+"""
+        for source_name, content in deduplicated_parts:
+            final_report += f"## 📌 来源: {source_name}\n\n{content}\n\n---\n\n"
+        
+        logger.info(f"[统一新闻工具] 🎉 美股融合完成: {len(sources_used)}个数据源, {len(final_report)} 字符")
+        
+        return final_report
     
     def _format_news_result(self, news_content: str, source: str, model_info: str = "") -> str:
         """格式化新闻结果"""
