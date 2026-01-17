@@ -81,7 +81,7 @@ services:
   # TradingAgents 主应用
   # ==========================================
   tradingagents:
-    image: ghcr.io/1williamaoayers/tradingagents-arm32:latest
+    image: ghcr.io/1williamaoayers/tradingagents-arm32:dev
     container_name: tradingagents
     restart: unless-stopped
     user: root
