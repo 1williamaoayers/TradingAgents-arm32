@@ -877,18 +877,25 @@ class UnifiedNewsAnalyzer:
         except Exception as e:
             logger.warning(f"[统一新闻工具] ⚠️ Serper获取失败: {e}")
         
-        # ==================== 数据源4: Alpha Vantage个股新闻 ====================
-        try:
-            logger.info(f"[统一新闻工具] 📈 [4/6] 从Alpha Vantage获取新闻...")
-            from tradingagents.tools.alpha_vantage_news import get_alpha_vantage_news, format_alpha_vantage_news
-            av_news = get_alpha_vantage_news(ticker=stock_code, limit=10)
-            if av_news and len(av_news) > 0:
-                formatted = format_alpha_vantage_news(av_news, stock_code)
-                logger.info(f"[统一新闻工具] ✅ Alpha Vantage: {len(av_news)}条, {len(formatted)} 字符")
-                all_content_parts.append(("Alpha Vantage", formatted))
-                sources_used.append("Alpha Vantage")
-        except Exception as e:
-            logger.warning(f"[统一新闻工具] ⚠️ Alpha Vantage获取失败: {e}")
+        # ==================== 数据源4: Alpha Vantage个股新闻（仅美股）====================
+        # Alpha Vantage只支持美股格式，港股/A股会报错，直接跳过节省时间
+        is_hk_stock = '.HK' in stock_code.upper() or '.hk' in stock_code
+        is_a_stock = stock_code.isdigit() and len(stock_code) == 6
+        
+        if is_hk_stock or is_a_stock:
+            logger.info(f"[统一新闻工具] ⏭️ [4/6] Alpha Vantage跳过（仅支持美股，当前: {'港股' if is_hk_stock else 'A股'}）")
+        else:
+            try:
+                logger.info(f"[统一新闻工具] 📈 [4/6] 从Alpha Vantage获取美股新闻...")
+                from tradingagents.tools.alpha_vantage_news import get_alpha_vantage_news, format_alpha_vantage_news
+                av_news = get_alpha_vantage_news(ticker=stock_code, limit=10)
+                if av_news and len(av_news) > 0:
+                    formatted = format_alpha_vantage_news(av_news, stock_code)
+                    logger.info(f"[统一新闻工具] ✅ Alpha Vantage: {len(av_news)}条, {len(formatted)} 字符")
+                    all_content_parts.append(("Alpha Vantage", formatted))
+                    sources_used.append("Alpha Vantage")
+            except Exception as e:
+                logger.warning(f"[统一新闻工具] ⚠️ Alpha Vantage获取失败: {e}")
         
         # ==================== 数据源5: RSS新闻源 ====================
         try:
