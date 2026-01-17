@@ -1,4 +1,20 @@
+# TradingAgents-CN Docker Compose 配置
+# 
+# 适用于: 1G+ 内存 VPS / NAS / 本地服务器
+# 
+# 使用方法:
+#   docker-compose up -d
+#
+# 内存分配 (已优化，1G VPS可用):
+#   - MongoDB: 256MB (wiredTiger缓存200MB)
+#   - Redis: 64MB (maxmemory 50MB + LRU淘汰)
+#   - Streamlit: 450MB
+#   - 总计约770MB，留200MB给系统
+
 services:
+  # ==========================================
+  # MongoDB 数据库
+  # ==========================================
   mongodb:
     image: mongo:7
     container_name: tradingagents-mongodb
@@ -11,29 +27,59 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - mongodb_data:/data/db
+    # 内存优化：限制wiredTiger缓存
+    command: >
+      mongod
+      --wiredTigerCacheSizeGB 0.25
+      --setParameter diagnosticDataCollectionEnabled=false
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
 
+  # ==========================================
+  # Redis 缓存
+  # ==========================================
   redis:
     image: redis:7-alpine
     container_name: tradingagents-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --requirepass tradingagents123
+    # 内存优化：限制maxmemory + LRU淘汰
+    command: >
+      redis-server
+      --requirepass tradingagents123
+      --maxmemory 50mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
     environment:
       - TZ=Asia/Shanghai
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
     healthcheck:
-      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
-      interval: 30s
+      test: [ "CMD", "redis-cli", "-a", "tradingagents123", "ping" ]
+      interval: 60s
       timeout: 10s
       retries: 3
 
+  # ==========================================
+  # TradingAgents 主应用
+  # ==========================================
   tradingagents:
     image: ghcr.io/1williamaoayers/tradingagents-arm32:latest
     container_name: tradingagents
@@ -48,7 +94,7 @@ services:
       - logs:/app/logs
       - cache:/app/cache
     env_file:
-      - .env # 🔥 从宿主机.env文件加载所有环境变量
+      - .env
     environment:
       - TZ=Asia/Shanghai
       - MONGODB_HOST=mongodb
@@ -58,7 +104,17 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=tradingagents123
+      # Python内存优化
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - MALLOC_ARENA_MAX=2
     command: /bin/bash /app/run_all.sh
+    deploy:
+      resources:
+        limits:
+          memory: 450M
+        reservations:
+          memory: 256M
     depends_on:
       mongodb:
         condition: service_healthy
@@ -66,10 +122,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8501/_stcore/health" ]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
 volumes:
   mongodb_data:
@@ -77,5 +133,3 @@ volumes:
   data:
   logs:
   cache:
-
-

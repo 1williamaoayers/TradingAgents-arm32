@@ -33,8 +33,8 @@ st.set_page_config(
 @st.cache_resource
 def get_mongo_client():
     """获取MongoDB客户端"""
-    mongo_uri = os.getenv("MONGODB_URI", "mongodb://admin:tradingagents123@mongodb:27017/")
-    return MongoClient(mongo_uri)
+    mongo_uri = "mongodb://admin:tradingagents123@mongodb:27017/?authSource=admin"
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
 
 def get_db():
     """获取数据库"""
@@ -111,7 +111,7 @@ def get_watchlist_stats():
             code = fav.get("stock_code")
             name = fav.get("stock_name", code)
             
-            # 去重：如果已经处理过这个股票代码，跳过
+            # 去重
             if code and code not in seen_codes:
                 seen_codes.add(code)
                 
@@ -179,9 +179,15 @@ def trigger_manual_sync():
         error_msg = result.stderr or result.stdout or "未知错误"
         raise Exception(f"同步脚本执行失败: {error_msg}")
     
-    # 解析JSON结果
+    # 解析JSON结果（只解析最后一行，忽略日志）
     try:
-        data = json.loads(result.stdout.strip())
+        # 获取最后一行非空输出
+        lines = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+        if not lines:
+            raise Exception("同步脚本无输出")
+        
+        # 解析最后一行JSON
+        data = json.loads(lines[-1])
         if not data.get("success"):
             raise Exception(data.get("error", "同步失败"))
         return data

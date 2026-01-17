@@ -1,6 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
+import os
 from datetime import datetime
 
 # 导入统一日志系统和分析模块日志装饰器
@@ -140,9 +141,14 @@ def create_news_analyst(llm, toolkit):
 请特别注意：
 ⚠️ 如果新闻数据存在滞后（超过2小时），请在分析中明确说明时效性限制
 ✅ 优先分析最新的、高相关性的新闻事件
-📊 提供新闻对市场情绪和投资者信心的影响评估
-💰 必须包含基于新闻的市场反应预期和投资建议
-🎯 聚焦新闻内容本身的解读，不涉及技术指标分析
+📊 **分析核心 (极致数据模式)**：
+1. **资金流驱动**：必须结合提供的【南向资金动向】数值进行分析。若近期出现大额买入或持仓比提升，必须在报告中阐明其对主力动向的指示意义。
+2. **公告实锤**：官方公告（Notice）、股权变动、股份回购是最高优先级。严禁忽略任何回购数据。
+3. **多源验证**：对比【核心新闻】与【研报】之间的观点分歧，识别市场的预期差。
+💰 必须包含基于新闻和资金面的综合市场反应预期。
+🎯 聚焦硬核数据解读，不涉及单纯的技术指标，但需关注资金流向指标。
+🧠 深度研判：禁止平铺直叙。若数据反映出资金边际改善（如下跌中买入），请深入分析其抗跌属性或抄底情绪。
+🚫 降噪提示：若发现抓取的新闻与主体公司明显不相关，请在报告开头用【数据噪声警告】明确标注。
 
 请撰写详细的中文分析报告，并在报告末尾附上Markdown表格总结关键发现。"""
         )
@@ -231,11 +237,21 @@ def create_news_analyst(llm, toolkit):
 
 您的职责是基于提供的新闻数据，对股票进行深入的新闻分析。
 
-分析要点：
+基础分析要点（通用）：
 1. 总结最新的新闻事件和市场动态
 2. 分析新闻对股票的潜在影响
 3. 评估市场情绪和投资者反应
 4. 提供基于新闻的投资建议
+
+📊 **极致数据模式增强要求**（针对港股市场）：
+1. **资金流驱动**：必须结合提供的【南向资金动向】数值进行分析。若近期出现大额买入或持仓比提升，必须在报告中阐明其对主力动向的指示意义。
+2. **公告实锤**：官方公告（Notice）、股权变动、股份回购是最高优先级。严禁忽略任何回购数据。
+3. **多源验证**：对比【核心新闻】与【研报】之间的观点分歧，识别市场的预期差。
+4. **深度研判**：禁止平铺直叙。若数据反映出资金边际改善（如下跌中买入），请深入分析其抗跌属性或抄底情绪。
+5. **降噪提示**：若发现抓取的新闻与主体公司明显不相关，请在报告开头用【数据噪声警告】明确标注。
+
+💰 必须包含基于新闻和资金面的综合市场反应预期。
+🎯 聚焦硬核数据解读，不涉及单纯的技术指标，但需关注资金流向指标。
 
 重要说明：新闻数据已经为您提供，您无需调用任何工具，直接基于提供的数据进行分析。"""
 
@@ -254,8 +270,18 @@ def create_news_analyst(llm, toolkit):
                     logger.info(f"[新闻分析师] 📝 系统提示词长度: {len(analysis_system_prompt)} 字符")
                     logger.info(f"[新闻分析师] 📝 用户提示词长度: {len(enhanced_prompt)} 字符")
 
-                    llm_start_time = datetime.now()
-                    # 🔧 重要：传递系统消息和用户消息，不包含工具调用
+                    forced_prompt = f"=== SYSTEM ===\n{analysis_system_prompt}\n\n=== USER ===\n{enhanced_prompt}"
+                    # 🚀 [原生态拦截] 预处理模式
+                    try:
+                        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../logs")
+                        capture_path = os.path.join(log_dir, "PROMPT_CAPTURE.md")
+                        with open(capture_path, "w", encoding="utf-8") as f:
+                            f.write(forced_prompt)
+                        logger.info(f"[新闻分析师] 🚀 [原生态拦截] 预处理模式提示词已保存至: {capture_path}")
+                    except Exception as ex:
+                        logger.error(f"[新闻分析师] ❌ 预处理模式拦截失败: {ex}")
+
+                    llm_start_time = datetime.now()  # 🔧 修复：添加计时开始
                     result = llm.invoke([
                         {"role": "system", "content": analysis_system_prompt},
                         {"role": "user", "content": enhanced_prompt}
@@ -374,7 +400,16 @@ def create_news_analyst(llm, toolkit):
 请基于上述真实新闻数据撰写详细的中文分析报告。
 """
 
-                        logger.info(f"[新闻分析师] 🔄 基于强制获取的新闻数据重新生成完整分析...")
+                        # 🚀 [原生态拦截] 补救模式
+                        try:
+                            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../logs")
+                            capture_path = os.path.join(log_dir, "PROMPT_CAPTURE.md")
+                            with open(capture_path, "w", encoding="utf-8") as f:
+                                f.write(forced_prompt)
+                            logger.info(f"[新闻分析师] 🚀 [原生态拦截] 补救模式提示词已保存至: {capture_path}")
+                        except Exception as ex:
+                            logger.error(f"[新闻分析师] ❌ 补救模式拦截失败: {ex}")
+                        
                         logger.info(f"[新闻分析师] 📝 强制提示词长度: {len(forced_prompt)} 字符")
 
                         forced_result = llm.invoke([{"role": "user", "content": forced_prompt}])

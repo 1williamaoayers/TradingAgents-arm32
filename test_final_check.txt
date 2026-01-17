@@ -1,0 +1,23 @@
+2026-01-12 08:56:01,643 | agents               | INFO     | 🔍 [ConfigManager] 加载 .env 文件: /anti/ak-trading/TradingAgents-arm32/.env
+2026-01-12 08:56:01,643 | agents               | INFO     | 🔍 [ConfigManager] 加载前 DASHSCOPE_API_KEY: 有值
+2026-01-12 08:56:01,645 | agents               | INFO     | 🔍 [ConfigManager] 加载后 DASHSCOPE_API_KEY: 有值
+2026-01-12 08:56:01,646 | agents               | INFO     | 🔧 [ConfigManager] 开始初始化 MongoDB 存储...
+2026-01-12 08:56:01,646 | agents               | INFO     | 🔍 [ConfigManager] USE_MONGODB_STORAGE=false (解析为: False)
+2026-01-12 08:56:01,646 | agents               | INFO     | ℹ️ [ConfigManager] MongoDB 存储未启用，将使用 JSON 文件存储
+2026-01-12 08:56:02,355 | agents               | WARNING  | ⚠️ stockstats工具不可用: No module named 'stockstats'
+🚀 测试股票: 01810 (小米集团)
+2026-01-12 08:56:03,072 | httpx                | INFO     | HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-01-12 08:56:04,610 | app.worker.news_utils.keyword_generator | INFO     | ✨ AI 生成关键词 (01810): ['01810', '小米集团', '雷军', '小米手机', 'Redmi', 'MIUI']
+✨ AI 生成关键词: ['01810', '小米集团', '雷军', '小米手机', 'Redmi', 'MIUI']
+2026-01-12 08:56:04,611 | tradingagents.dataflows.providers.china.akshare | INFO     | 📦 使用本地AKShare库
+2026-01-12 08:56:04,798 | tradingagents.dataflows.providers.china.akshare | INFO     | 🔧 检测到 curl_cffi，将使用它来模拟真实浏览器 TLS 指纹
+2026-01-12 08:56:04,798 | tradingagents.dataflows.providers.china.akshare | INFO     | 🔧 已修复AKShare的headers问题，使用 curl_cffi 模拟真实浏览器（Chrome 120）
+2026-01-12 08:56:04,798 | tradingagents.dataflows.providers.china.akshare | INFO     | 🔧 AKShare超时配置完成: 60秒
+2026-01-12 08:56:04,798 | tradingagents.dataflows.providers.china.akshare | INFO     | ✅ AKShare连接成功
+🔍 市场识别: 港股
+📌 最终补位代码: 01810
+✅ 补位正确!
+📡 正在尝试抓取新闻，搜索词: 01810 小米集团 雷军 小米手机 Redmi MIUI
+2026-01-12 08:56:04,799 | tradingagents.dataflows.providers.base_provider.AKShare | WARNING  | ⚠️ 01810 AKShare个股新闻接口暂时不可用(stock_news_em接口失效)
+2026-01-12 08:56:04,799 | tradingagents.dataflows.providers.base_provider.AKShare | INFO     |    建议使用其他新闻源: FinnHub, Alpha Vantage, Google News
+⚠️ 未抓取到新闻 (可能是 stock_news_em 接口问题或非 Docker 环境)

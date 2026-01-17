@@ -1,0 +1,22 @@
+2026-01-12 08:56:56,195 | agents               | INFO     | 🔍 [ConfigManager] 加载 .env 文件: /anti/ak-trading/TradingAgents-arm32/.env
+2026-01-12 08:56:56,196 | agents               | INFO     | 🔍 [ConfigManager] 加载前 DASHSCOPE_API_KEY: 有值
+2026-01-12 08:56:56,198 | agents               | INFO     | 🔍 [ConfigManager] 加载后 DASHSCOPE_API_KEY: 有值
+2026-01-12 08:56:56,198 | agents               | INFO     | 🔧 [ConfigManager] 开始初始化 MongoDB 存储...
+2026-01-12 08:56:56,198 | agents               | INFO     | 🔍 [ConfigManager] USE_MONGODB_STORAGE=false (解析为: False)
+2026-01-12 08:56:56,198 | agents               | INFO     | ℹ️ [ConfigManager] MongoDB 存储未启用，将使用 JSON 文件存储
+2026-01-12 08:56:56,891 | agents               | WARNING  | ⚠️ stockstats工具不可用: No module named 'stockstats'
+2026-01-12 08:56:57,563 | tradingagents.dataflows.providers.china.akshare | INFO     | 📦 使用本地AKShare库
+2026-01-12 08:56:57,762 | tradingagents.dataflows.providers.china.akshare | INFO     | 🔧 检测到 curl_cffi，将使用它来模拟真实浏览器 TLS 指纹
+2026-01-12 08:56:57,762 | tradingagents.dataflows.providers.china.akshare | INFO     | 🔧 已修复AKShare的headers问题，使用 curl_cffi 模拟真实浏览器（Chrome 120）
+2026-01-12 08:56:57,762 | tradingagents.dataflows.providers.china.akshare | INFO     | 🔧 AKShare超时配置完成: 60秒
+2026-01-12 08:56:57,762 | tradingagents.dataflows.providers.china.akshare | INFO     | ✅ AKShare连接成功
+2026-01-12 08:56:57,899 | tradingagents.dataflows.providers.base_provider.AKShare | INFO     | ✅ 01810 直接调用 API 获取新闻成功: 5 条
+Done: True
+                                                新闻标题  ... 新闻类型
+0               <em>雷军</em>：对<em>小米</em>YU7冬季表现有足够信心  ...     
+1  2025年<em>小米</em>汽车交付超41万辆<em> 雷军</em>直播现场拆车：特别...  ...     
+2  <em>雷军</em>重申2000亿研发投入计划，<em>小米</em>内部技术奖项6年奖励...  ...     
+3           <em>雷军</em>回应掉粉、营销大师，称没有规划<em>小米</em>SU3  ...     
+4                              <em>雷军</em>回应“营销大师”标签  ...     
+
+[5 rows x 7 columns]
