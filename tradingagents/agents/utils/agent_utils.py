@@ -1090,21 +1090,138 @@ class Toolkit:
                         logger.error(f"❌ [统一基本面工具] 港股所有数据源都失败: {e2}")
 
             else:
-                # 美股：使用OpenAI/Finnhub数据源
-                logger.info(f"🇺🇸 [统一基本面工具] 处理美股数据...")
+                # 美股：使用AKShare多源数据（替代OpenAI）
+                logger.info(f"🇺🇸 [统一基本面工具] 处理美股数据（AKShare多源模式）...")
 
                 # 🔥 统一策略：所有级别都获取完整数据
-                # 原因：提示词是统一的，如果数据不完整会导致LLM基于不存在的数据进行分析（幻觉）
-                logger.info(f"🔍 [美股基本面] 统一策略：获取完整数据（忽略 data_depth 参数）")
+                logger.info(f"🔍 [美股基本面] 使用AKShare数据源：实时行情+历史K线+公司信息+财务指标+估值")
 
+                import akshare as ak
+                from datetime import datetime, timedelta
+                
+                us_data_parts = []
+                
+                # 1. 实时行情 - 东财
                 try:
-                    from tradingagents.dataflows.interface import get_fundamentals_openai
-                    us_data = get_fundamentals_openai(ticker, curr_date)
-                    result_data.append(f"## 美股基本面数据\n{us_data}")
-                    logger.info(f"✅ [统一基本面工具] 美股数据获取成功")
+                    logger.info(f"📊 [美股1/5] 获取实时行情...")
+                    spot_df = ak.stock_us_spot_em()
+                    ticker_data = spot_df[spot_df['代码'].str.contains(ticker, na=False)]
+                    if len(ticker_data) > 0:
+                        row = ticker_data.iloc[0]
+                        spot_info = f"""### 实时行情 (东方财富)
+- **股票代码**: {row.get('代码', ticker)}
+- **股票名称**: {row.get('名称', ticker)}
+- **最新价**: ${row.get('最新价', 'N/A')}
+- **涨跌幅**: {row.get('涨跌幅', 'N/A')}%
+- **总市值**: ${row.get('总市值', 0)/1e9:.2f}B
+- **市盈率(PE)**: {row.get('市盈率', 'N/A')}
+- **成交量**: {row.get('成交量', 0)/1e6:.2f}M
+- **成交额**: ${row.get('成交额', 0)/1e9:.2f}B
+"""
+                        us_data_parts.append(spot_info)
+                        logger.info(f"✅ [美股1/5] 实时行情获取成功")
                 except Exception as e:
-                    result_data.append(f"## 美股基本面数据\n获取失败: {e}")
-                    logger.error(f"❌ [统一基本面工具] 美股数据获取失败: {e}")
+                    logger.warning(f"⚠️ [美股1/5] 实时行情获取失败: {e}")
+                
+                # 2. 历史K线
+                try:
+                    logger.info(f"📈 [美股2/5] 获取历史K线...")
+                    # 确定股票代码格式（东财美股格式：市场代码.股票代码，如105.TSLA）
+                    us_code = f"105.{ticker}" if '.' not in ticker else ticker
+                    end_dt = datetime.now()
+                    start_dt = end_dt - timedelta(days=30)
+                    hist_df = ak.stock_us_hist(
+                        symbol=us_code, 
+                        period='daily', 
+                        start_date=start_dt.strftime('%Y%m%d'), 
+                        end_date=end_dt.strftime('%Y%m%d'), 
+                        adjust='qfq'
+                    )
+                    if len(hist_df) > 0:
+                        latest = hist_df.iloc[-1]
+                        high_30d = hist_df['最高'].max()
+                        low_30d = hist_df['最低'].min()
+                        avg_vol = hist_df['成交量'].mean() / 1e6
+                        hist_info = f"""### 近30天行情走势
+- **30天最高价**: ${high_30d:.2f}
+- **30天最低价**: ${low_30d:.2f}
+- **30天平均成交量**: {avg_vol:.2f}M
+- **最新收盘**: ${latest.get('收盘', 'N/A')}
+- **数据天数**: {len(hist_df)}天
+"""
+                        us_data_parts.append(hist_info)
+                        logger.info(f"✅ [美股2/5] 历史K线获取成功: {len(hist_df)}天")
+                except Exception as e:
+                    logger.warning(f"⚠️ [美股2/5] 历史K线获取失败: {e}")
+                
+                # 3. 公司基本信息 - 雪球
+                try:
+                    logger.info(f"📋 [美股3/5] 获取公司信息...")
+                    info_df = ak.stock_individual_basic_info_us_xq(symbol=ticker)
+                    if len(info_df) > 0:
+                        info_dict = dict(zip(info_df.iloc[:, 0], info_df.iloc[:, 1])) if len(info_df.columns) >= 2 else {}
+                        company_info = f"""### 公司基本信息 (雪球)
+- **公司名称**: {info_dict.get('公司名称', info_dict.get('name', ticker))}
+- **所属行业**: {info_dict.get('所属行业', info_dict.get('industry', 'N/A'))}
+- **上市日期**: {info_dict.get('上市日期', info_dict.get('list_date', 'N/A'))}
+- **官网**: {info_dict.get('公司官网', info_dict.get('website', 'N/A'))}
+"""
+                        us_data_parts.append(company_info)
+                        logger.info(f"✅ [美股3/5] 公司信息获取成功")
+                except Exception as e:
+                    logger.warning(f"⚠️ [美股3/5] 公司信息获取失败: {e}")
+                
+                # 4. 财务分析指标 - 东财
+                try:
+                    logger.info(f"💰 [美股4/5] 获取财务分析指标...")
+                    fin_df = ak.stock_financial_us_analysis_indicator_em(symbol=ticker)
+                    if len(fin_df) > 0:
+                        # 获取第一行数据
+                        fin_row = fin_df.iloc[0]
+                        fin_info = f"""### 财务分析指标 (东方财富)
+- **股票代码**: {fin_row.get('SECURITY_CODE', ticker)}
+- **公司名称**: {fin_row.get('SECURITY_NAME_ABBR', ticker)}
+- **会计准则**: {fin_row.get('ACCOUNTING_STANDARDS', 'N/A')}
+{"- **详细指标**: " + str(len(fin_df)) + "项财务数据可用"}
+"""
+                        us_data_parts.append(fin_info)
+                        logger.info(f"✅ [美股4/5] 财务分析指标获取成功: {len(fin_df)}项")
+                except Exception as e:
+                    logger.warning(f"⚠️ [美股4/5] 财务分析指标获取失败: {e}")
+                
+                # 5. 估值数据 - 百度
+                try:
+                    logger.info(f"📉 [美股5/5] 获取估值数据...")
+                    val_df = ak.stock_us_valuation_baidu(symbol=ticker, indicator='总市值', period='近一年')
+                    if len(val_df) > 0:
+                        latest_val = val_df.iloc[-1] if len(val_df) > 0 else {}
+                        max_val = val_df.iloc[:, 1].max() if len(val_df.columns) > 1 else 'N/A'
+                        min_val = val_df.iloc[:, 1].min() if len(val_df.columns) > 1 else 'N/A'
+                        val_info = f"""### 估值历史 (百度)
+- **近一年估值数据**: {len(val_df)}条
+- **一年最高市值**: {max_val}
+- **一年最低市值**: {min_val}
+"""
+                        us_data_parts.append(val_info)
+                        logger.info(f"✅ [美股5/5] 估值数据获取成功: {len(val_df)}条")
+                except Exception as e:
+                    logger.warning(f"⚠️ [美股5/5] 估值数据获取失败: {e}")
+                
+                # 汇总美股数据
+                if us_data_parts:
+                    us_combined = f"""## 美股基本面数据 ({ticker})
+
+**数据来源**: AKShare (东方财富 + 雪球 + 百度)
+**获取时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**成功模块**: {len(us_data_parts)}/5
+
+{''.join(us_data_parts)}
+"""
+                    result_data.append(us_combined)
+                    logger.info(f"✅ [统一基本面工具] 美股数据获取成功: {len(us_data_parts)}/5 模块")
+                else:
+                    result_data.append(f"## 美股基本面数据\n获取失败: 所有AKShare接口均不可用")
+                    logger.error(f"❌ [统一基本面工具] 美股所有数据源都失败")
 
             # 组合所有数据
             combined_result = f"""# {ticker} 基本面分析数据
