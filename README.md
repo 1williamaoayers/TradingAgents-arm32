@@ -32,7 +32,7 @@ git clone https://github.com/1williamaoayers/TradingAgents-arm32.git
 cd TradingAgents-arm32
 
 # 2. 一键部署
-bash scripts/deploy.sh
+docker-compose up -d
 
 # 3. 访问应用
 # 浏览器打开: http://localhost:8501
@@ -86,7 +86,7 @@ cp .env.docker .env
 # 编辑.env文件,填入API密钥
 
 # 3. 启动应用
-streamlit run web/主页.py
+streamlit run web/app.py
 ```
 
 ---
@@ -127,10 +127,12 @@ docker-compose up -d
 - 🔄 配置文件已自动保存并备份
 
 ---
+
    - **步骤1**: AI模型API密钥 (必填)
    - **步骤2**: 数据源API密钥 (可选)
    - **步骤3**: 数据库配置 (自动)
    - **步骤4**: 高级设置 (可选)
+
 4. 点击 **"保存"** - 配置立即生效!
 
 ### 📝 手动配置
@@ -261,6 +263,85 @@ cd /home/tradingagents && docker-compose down -v --rmi all && rm -rf data logs c
 # ⚠️ 完全卸载 (删除所有数据、镜像、文件,释放全部磁盘空间)
 cd /home/tradingagents && docker-compose down -v --rmi all && cd / && rm -rf /home/tradingagents
 ```
+
+---
+
+## 💰 1G内存VPS部署 (穷人专用)
+
+> 买不起大内存VPS？没关系！本项目专门优化了1G内存版本，小白也能轻松部署！
+
+### 📋 你需要准备什么
+
+- 一台1G内存的VPS（任意云服务商都行）
+- 能用SSH连接到VPS
+- 10分钟时间
+
+### 🚀 三步部署（小白复制粘贴就行）
+
+**第一步：下载项目**
+```bash
+cd /home
+git clone https://github.com/1williamaoayers/TradingAgents-arm32.git
+cd TradingAgents-arm32
+```
+
+**第二步：一键部署**（会自动配置内存优化+Swap）
+```bash
+sudo ./deploy-1g-vps.sh
+```
+
+**第三步：等30秒，然后访问**
+```
+http://你的VPS公网IP:8501
+```
+
+**搞定！** 🎉
+
+### 📊 内存占用说明
+
+| 组件 | 内存占用 | 干什么用的 |
+|------|----------|------------|
+| MongoDB | ~150MB | 存新闻和分析报告 |
+| Redis | ~30MB | 缓存加速 |
+| 主程序 | ~300MB | 网页界面+AI分析 |
+| **总计** | **~500MB** | 还剩400MB+1G Swap |
+
+### ❓ 常见问题
+
+**Q: 会不会卡？**  
+A: 正常使用不卡。AI分析时可能稍慢，但不影响使用。
+
+**Q: 内存不够怎么办？**  
+A: 脚本自动配置了1GB Swap交换分区，不用担心。
+
+**Q: 怎么停止/重启？**
+```bash
+cd /home/TradingAgents-arm32
+
+# 停止
+docker-compose down
+
+# 重启  
+docker-compose restart
+
+# 查看状态
+docker-compose ps
+```
+
+**Q: 怎么看内存使用？**
+```bash
+# 看容器内存
+docker stats
+
+# 看系统内存
+free -h
+```
+
+### ⚠️ 注意事项
+
+1. **首次启动较慢** - 需要下载镜像，等3-5分钟
+2. **不建议多人同时用** - 1G内存适合个人使用
+3. **记得配置API密钥** - 进入网页后先去"配置向导"填写
 
 ---
 

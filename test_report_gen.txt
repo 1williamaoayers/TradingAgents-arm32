@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/anti/ak-trading/TradingAgents-arm32/test_01810_complete.py", line 8, in <module>
+    os.chdir('/app')
+    ~~~~~~~~^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/app'

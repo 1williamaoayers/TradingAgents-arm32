@@ -327,6 +327,16 @@ class ImprovedHKStockProvider:
                 logger.warning(f"⚠️ [港股财务指标] 未获取到数据: {normalized_symbol}")
                 return {}
 
+            # 🔥 核心加固：强制按报告期日期进行倒序排列
+            # 确保无论 API 默认怎么传，iloc[0] 拿到的永远是最新的一份报表
+            try:
+                if 'REPORT_DATE' in df.columns:
+                    df = df.sort_values("REPORT_DATE", ascending=False)
+                elif '截至日期' in df.columns: # 处理可能出现的中文列名兼容
+                    df = df.sort_values("截至日期", ascending=False)
+            except Exception as sort_e:
+                logger.warning(f"⚠️ [港股财务指标] 排序失败: {sort_e}")
+
             # 获取最新一期数据
             latest = df.iloc[0]
 

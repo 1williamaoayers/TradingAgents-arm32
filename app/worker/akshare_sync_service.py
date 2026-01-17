@@ -10,7 +10,8 @@ from typing import Dict, Any, List, Optional
 from app.core.database import get_mongo_db
 from app.services.historical_data_service import get_historical_data_service
 from app.services.news_data_service import get_news_data_service
-from tradingagents.dataflows.providers.china.akshare import get_akshare_provider
+# 延迟导入，避免模块级初始化卡住
+# from tradingagents.dataflows.providers.china.akshare import get_akshare_provider
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +38,19 @@ class AKShareSyncService:
     async def initialize(self):
         """初始化同步服务"""
         try:
-            # 初始化数据库连接
-            self.db = get_mongo_db()
+            # 延迟导入，避免模块级初始化卡住
+            from tradingagents.dataflows.providers.china.akshare import get_akshare_provider
+            from motor.motor_asyncio import AsyncIOMotorClient
+            
+            # 直接创建Motor客户端，不依赖get_mongo_db
+            mongo_uri = "mongodb://admin:tradingagents123@mongodb:27017/?authSource=admin"
+            mongo_client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            self.db = mongo_client['tradingagents']
 
-            # 初始化历史数据服务
-            self.historical_service = await get_historical_data_service()
-
-            # 初始化新闻数据服务
-            self.news_service = await get_news_data_service()
+            # 历史数据服务和新闻服务都依赖全局MongoDB初始化
+            # 暂时设置为None，sync_news_data会检查并直接操作数据库
+            self.historical_service = None
+            self.news_service = None
 
             # 初始化AKShare提供器（使用全局单例，确保monkey patch生效）
             self.provider = get_akshare_provider()
@@ -1082,6 +1088,33 @@ class AKShareSyncService:
                        f"错误 {stats['error_count']} 只, "
                        f"耗时 {stats['duration']:.2f} 秒")
 
+            # 🔥 增强：同步多源财经快讯（7个快讯源）
+            try:
+                logger.info("📡 开始同步多源财经快讯...")
+                multi_source_count = await self._sync_multi_source_news()
+                stats["multi_source_count"] = multi_source_count
+                logger.info(f"✅ 多源快讯同步完成: {multi_source_count} 条")
+            except Exception as e:
+                logger.warning(f"⚠️ 多源快讯同步失败: {e}")
+                stats["multi_source_count"] = 0
+
+            # 保存同步历史
+            try:
+                sync_record = {
+                    "sync_type": "manual" if favorites_only else "auto",
+                    "total_stocks": stats["total_processed"],
+                    "success_count": stats["success_count"],
+                    "news_count": stats["news_count"],
+                    "error_count": stats["error_count"],
+                    "duration": stats["duration"],
+                    "status": "success" if stats["error_count"] == 0 else "partial",
+                    "sync_time": stats["end_time"],
+                    "created_at": stats["end_time"]
+                }
+                await self.db.news_sync_history.insert_one(sync_record)
+            except Exception as e:
+                logger.error(f"保存同步历史失败: {e}")
+
             return stats
 
         except Exception as e:
@@ -1112,11 +1145,38 @@ class AKShareSyncService:
 
                 if news_data:
                     # 保存新闻数据
-                    saved_count = await self.news_service.save_news_data(
-                        news_data=news_data,
-                        data_source="akshare",
-                        market="CN"
-                    )
+                    if self.news_service is not None:
+                        saved_count = await self.news_service.save_news_data(
+                            news_data=news_data,
+                            data_source="akshare",
+                            market="CN"
+                        )
+                    else:
+                        # news_service为None时，直接保存到数据库
+                        from datetime import datetime
+                        saved_count = 0
+                        for news in (news_data if isinstance(news_data, list) else [news_data]):
+                            try:
+                                doc = {
+                                    "symbol": symbol,
+                                    "title": news.get("title", ""),
+                                    "url": news.get("url", ""),
+                                    "content": news.get("content", ""),
+                                    "publish_time": news.get("publish_time"),
+                                    "source": "akshare",
+                                    "created_at": datetime.utcnow()
+                                }
+                                
+                                existing = await self.db.stock_news.find_one({
+                                    "url": doc["url"],
+                                    "title": doc["title"]
+                                })
+                                
+                                if not existing:
+                                    await self.db.stock_news.insert_one(doc)
+                                    saved_count += 1
+                            except:
+                                pass
 
                     batch_stats["success_count"] += 1
                     batch_stats["news_count"] += saved_count
@@ -1140,6 +1200,182 @@ class AKShareSyncService:
                 await asyncio.sleep(1.0)
 
         return batch_stats
+
+    async def _sync_multi_source_news(self) -> int:
+        """
+        🔥 同步多源财经快讯（7个快讯源）
+        将财联社、东财快讯、新浪、同花顺、富途、财新、财经早餐的数据存入数据库
+        
+        Returns:
+            保存的新闻条数
+        """
+        from datetime import datetime
+        
+        total_saved = 0
+        
+        # 获取AKShare provider
+        try:
+            from tradingagents.dataflows.providers.china.akshare import get_akshare_provider
+            provider = get_akshare_provider()
+        except Exception as e:
+            logger.error(f"❌ 获取AKShare provider失败: {e}")
+            return 0
+        
+        # 定义要同步的快讯源
+        news_sources = [
+            ("财联社电报", provider.get_news_cls_telegraph, 20),
+            ("东财全球快讯", provider.get_news_global_em, 20),
+            ("新浪快讯", provider.get_news_global_sina, 20),
+            ("同花顺直播", provider.get_news_global_ths, 20),
+            ("富途快讯", provider.get_news_futu, 20),
+            ("财新网", provider.get_news_caixin, 20),
+            ("财经早餐", provider.get_news_breakfast, 10),
+        ]
+        
+        for source_name, fetch_func, limit in news_sources:
+            try:
+                logger.info(f"📰 同步 {source_name}...")
+                df = fetch_func(limit=limit)
+                
+                if df is None or df.empty:
+                    logger.debug(f"⚠️ {source_name} 返回空数据")
+                    continue
+                
+                saved_count = 0
+                for _, row in df.iterrows():
+                    try:
+                        # 提取字段（兼容不同数据格式）
+                        title = row.get('标题', '') or row.get('title', '') or row.get('内容', '')[:50] if row.get('内容') else ''
+                        content = row.get('内容', '') or row.get('content', '') or row.get('标题', '')
+                        publish_time_str = row.get('发布时间', '') or row.get('time', '') or row.get('时间', '') or row.get('日期', '')
+                        url = row.get('链接', '') or row.get('url', '') or ''
+                        
+                        if not title:
+                            continue
+                        
+                        # 解析发布时间
+                        publish_time = datetime.utcnow()
+                        if publish_time_str:
+                            try:
+                                if isinstance(publish_time_str, str):
+                                    # 尝试多种时间格式
+                                    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d', '%H:%M:%S', '%H:%M']:
+                                        try:
+                                            publish_time = datetime.strptime(publish_time_str, fmt)
+                                            break
+                                        except:
+                                            continue
+                            except:
+                                pass
+                        
+                        doc = {
+                            "symbol": "GENERAL",  # 通用新闻
+                            "title": title[:500],
+                            "content": content[:2000] if content else "",
+                            "url": url,
+                            "source": source_name,
+                            "publish_time": publish_time,
+                            "created_at": datetime.utcnow(),
+                            "news_type": "快讯"
+                        }
+                        
+                        # 去重检查（标题+来源）
+                        existing = await self.db.stock_news.find_one({
+                            "title": doc["title"],
+                            "source": doc["source"]
+                        })
+                        
+                        if not existing:
+                            await self.db.stock_news.insert_one(doc)
+                            saved_count += 1
+                            
+                    except Exception as e:
+                        logger.debug(f"保存单条新闻失败: {e}")
+                        continue
+                
+                total_saved += saved_count
+                logger.info(f"✅ {source_name}: 保存 {saved_count} 条")
+                
+                # API限流
+                await asyncio.sleep(0.3)
+                
+            except Exception as e:
+                logger.warning(f"⚠️ {source_name} 同步失败: {e}")
+                continue
+        
+        logger.info(f"📊 多源快讯同步完成: 共保存 {total_saved} 条")
+        
+        # 🔥 增强：同步RSS新闻源
+        try:
+            logger.info("📡 同步RSS新闻源...")
+            rss_count = await self._sync_rss_news()
+            total_saved += rss_count
+            logger.info(f"✅ RSS新闻同步完成: {rss_count} 条")
+        except Exception as e:
+            logger.warning(f"⚠️ RSS新闻同步失败: {e}")
+        
+        return total_saved
+    
+    async def _sync_rss_news(self) -> int:
+        """
+        🔥 同步RSS新闻源
+        使用已有的RSSAdapter从金十、财联社、格隆汇、华尔街见闻等抓取新闻
+        
+        Returns:
+            保存的新闻条数
+        """
+        from datetime import datetime
+        
+        try:
+            from app.worker.news_adapters.rss_adapter import RSSAdapter
+            
+            rss_adapter = RSSAdapter()
+            
+            # 获取通用市场新闻（使用空symbol获取所有市场新闻）
+            news_list = await rss_adapter.get_news(symbol="", limit=50)
+            
+            if not news_list:
+                logger.info("⚠️ RSS未获取到新闻")
+                return 0
+            
+            saved_count = 0
+            for news in news_list:
+                try:
+                    title = news.get("title", "")
+                    if not title:
+                        continue
+                    
+                    doc = {
+                        "symbol": "GENERAL",
+                        "title": title[:500],
+                        "content": news.get("content", "") or news.get("summary", ""),
+                        "url": news.get("url", ""),
+                        "source": "RSS",
+                        "publish_time": news.get("publish_time", datetime.utcnow()),
+                        "created_at": datetime.utcnow(),
+                        "news_type": "RSS快讯",
+                        "match_type": news.get("match_type", "")
+                    }
+                    
+                    # 去重检查
+                    existing = await self.db.stock_news.find_one({
+                        "title": doc["title"],
+                        "source": "RSS"
+                    })
+                    
+                    if not existing:
+                        await self.db.stock_news.insert_one(doc)
+                        saved_count += 1
+                        
+                except Exception as e:
+                    logger.debug(f"保存RSS新闻失败: {e}")
+                    continue
+            
+            return saved_count
+            
+        except Exception as e:
+            logger.warning(f"⚠️ RSS适配器调用失败: {e}")
+            return 0
 
 
 # 全局同步服务实例
