@@ -92,64 +92,84 @@
 
 ---
 
-## 🚀 一键部署（3分钟完成）
+## 🚀 完整部署指南（2026最新版）
 
-### 第1步：复制粘贴这行命令
+以下步骤经过实测，适用于 Ubuntu/Debian 系统（包括 ARM64 架构）。
+
+### 第1步：准备工作目录
 
 ```bash
-mkdir -p /home/tradingagents && cd /home/tradingagents && git clone -b dev https://github.com/1williamaoayers/TradingAgents-arm32.git . && cp .env.docker .env && docker-compose up -d
+mkdir -p /home/tradingagents && cd /home/tradingagents
 ```
 
-### 第2步：等待1-2分钟，打开浏览器
+### 第2步：获取代码（必须）
 
-```
-http://你的服务器IP:8501
+⚠️ **重要**：必须克隆代码，否则没有最新的功能界面！
+
+```bash
+git clone -b dev https://github.com/1williamaoayers/TradingAgents-arm32.git .
 ```
 
-**完成！** 🎉 就这么简单！
+### 第3步：配置环境变量 (API Key)
+
+复制以下命令，替换为你自己的 Key，一次性配置所有必需参数：
+
+```bash
+# 1. 复制 .env 模板
+cp .env.docker .env
+
+# 2. 写入你的 API Key (请替换实际值)
+cat >> .env << 'EOF'
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+FINNHUB_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ALPHA_VANTAGE_API_KEY=xxxxxxxxxxxxxxxx
+SERPER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EOF
+```
+
+### 第4步：启动主应用
+
+```bash
+docker-compose up -d
+```
+等待约 1-2 分钟，确保 mongo/redis/tradingagents 都显示 `Healthy` 或 `Started`。
 
 ---
 
-## ⚠️ MongoDB 兼容性说明
+## 🕷️ 部署 PlaywriteOCR 爬虫（强烈推荐）
 
-本项目使用 **MongoDB 4.4**，兼容所有 CPU（包括不支持 AVX 指令集的老旧/低端 CPU）。
+想要港股新闻和实时财经快讯？必须部署这个！
 
-> **注意**：MongoDB 5.0+ 强制要求 AVX 指令集，在部分 VPS 上会启动失败。我们已降级到 4.4 解决此问题。
-
----
-
-## 🕷️ PlaywriteOCR 爬虫部署（港股新闻增强）
-
-PlaywriteOCR 是独立的新闻爬虫服务，提供 8 个财经网站的实时新闻采集能力。
-
-### 部署爬虫服务
+### 1. 启动爬虫容器
 
 ```bash
-# 拉取并启动爬虫容器
-docker run -d --name playwriteocr -p 9527:9527 ghcr.io/1williamaoayers/playwriteocr:latest
-
-# 验证服务状态
-curl http://localhost:9527/api/v1/health
+docker run -d --name playwriteocr --restart unless-stopped -p 9527:9527 ghcr.io/1williamaoayers/playwriteocr:latest
 ```
 
-### 对接 TradingAgents
+### 2. 对接主应用（网络互通）
 
-如果爬虫和主应用在同一台机器，需要配置网络互通：
+爬虫和主应用在同一机器时，必须执行以下操作：
 
 ```bash
-# 1. 让爬虫加入主应用网络
+# A. 让爬虫加入主应用网络
 docker network connect tradingagents_default playwriteocr
 
-# 2. 配置环境变量
-cd /home/tradingagents
+# B. 告诉主应用爬虫在哪里
 echo "SCRAPER_API_URL=http://playwriteocr:9527" >> .env
 
-# 3. 重启主应用
+# C. 重启主应用生效
 docker-compose restart tradingagents
+```
 
-# 4. 验证连接
+### 3. 验证连接
+
+```bash
 docker exec tradingagents curl -s http://playwriteocr:9527/api/v1/health
 ```
+如果返回 `{"status":"ok"...}` 说明对接成功！
+
+---
 
 ### 爬虫支持的数据源
 
