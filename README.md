@@ -1,404 +1,339 @@
-# 🤖 TradingAgents - AI驱动的股票分析助手
+# 🤖 TradingAgents-CN - AI驱动的多市场股票分析平台
 
-> 🚀 **一键部署** | 🎨 **Web配置** | 🌍 **多市场支持** | 🐳 **Docker容器化**
-
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
-[![Multi-Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-green)](https://github.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+> 🎯 **专为"零基础用户"设计** - 复制粘贴即可完成部署，无需懂代码！
 
 ---
 
-## ✨ 特性
+## 📊 项目定位
 
-- 🤖 **AI多智能体协作** - 市场分析师、新闻分析师、基本面分析师、风险评估团队
-- 🌍 **多市场支持** - 美股、A股、港股全覆盖
-- 🎨 **Web配置向导** - 无需编辑配置文件,浏览器内可视化配置
-- 🐳 **Docker一键部署** - 支持x86_64和ARM64架构(VPS/NAS/树莓派)
-- 📱 **响应式设计** - 支持PC、平板、手机、折叠屏
-- 💾 **自动数据持久化** - MongoDB + Redis自动配置
-- 🔄 **实时新闻聚合** - 整合多个新闻源,15分钟缓存
+**TradingAgents-CN** 是一个**AI驱动的股票分析平台**，支持 A股、港股、美股 三大市场。它通过多数据源采集新闻和市场数据，结合大语言模型（LLM）生成专业的投资分析报告。
 
 ---
 
-## 🚀 快速开始
+## 📋 DEV版本特色功能
 
-### 方式1: Docker一键部署 (推荐)
+| 功能 | 说明 |
+|------|------|
+| 🇺🇸 **美股完整支持** | TSLA/GOOGL等美股新闻+基本面分析，无需OpenAI Key |
+| 🇭🇰 **港股完整支持** | 小米/腾讯等港股新闻+财报+回购动态 |
+| 🇨🇳 **A股完整支持** | 沪深股票分析，东方财富数据源 |
+| 🔄 **新闻智能去重** | 自动过滤重复新闻，保留最完整版本 |
+| ⏰ **自动定时同步** | AKShare每4小时整点/爬虫每4小时半点/多源5/10/21点 |
+| 🚀 **开箱即用** | 自动配置，小白也能一键部署 |
 
-**适用于**: VPS、NAS、本地服务器
+---
 
-```bash
-# 1. 克隆项目
-git clone https://github.com/1williamaoayers/TradingAgents-arm32.git
-cd TradingAgents-arm32
+## 🏗️ 技术架构
 
-# 2. 一键部署
-bash scripts/deploy.sh
-
-# 3. 访问应用
-# 浏览器打开: http://localhost:8501
 ```
-
-**就这么简单!** 🎉
-
----
-
-### 🎯 懒人一键部署 (超简单!)
-
-**适用于**: 想要最快速度部署的用户
-
-**一键复制执行**（复制下面整行）:
-```bash
-mkdir -p /home/tradingagents && cd /home/tradingagents && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && curl -sO https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/.env.docker && mv .env.docker .env && docker-compose up -d
-```
-
-完成后访问: `http://你的服务器IP:8501`
-
-**包含的服务**:
-- 🐳 **TradingAgents** - 主应用 (端口8501)
-- 🍃 **MongoDB** - 数据库 (自动配置)
-- 🔴 **Redis** - 缓存 (自动配置)
-
-**提示**: 
-- 📁 所有数据和配置保存在 `/home/tradingagents/` 目录
-- 🔑 API密钥存储在 `.env` 文件中，容器重启后自动读取
-- 🔄 重启服务: `docker-compose restart`
-- 📋 查看日志: `docker-compose logs -f`
-- 🛑 停止服务: `docker-compose down`
-
-**🧪 测试数据库连接** (可选):
-```bash
-# 一键测试MongoDB和Redis是否正常工作
-docker exec -it tradingagents python scripts/test-database-connection.py
-
-# 看到 "🎉 所有测试通过!" 就表示数据库连接正常
+┌─────────────────────────────────────────────────────────────────┐
+│                      TradingAgents-CN                           │
+├─────────────────────────────────────────────────────────────────┤
+│  前端 (Streamlit)                后端 (FastAPI)                 │
+│  ├─ 主页.py (分析入口)           ├─ main.py (913行，核心入口)   │
+│  ├─ 自选股管理                   ├─ 37个路由模块               │
+│  ├─ 新闻同步监控                 ├─ 61个服务模块               │
+│  └─ 系统配置                     └─ 定时任务调度器              │
+├─────────────────────────────────────────────────────────────────┤
+│  AI分析引擎 (tradingagents/)                                    │
+│  ├─ agents/ (19个分析师角色)                                    │
+│  ├─ tools/ (统一新闻工具、基本面工具)                           │
+│  ├─ dataflows/ (46个数据流模块)                                 │
+│  └─ llm_adapters/ (DeepSeek/Qwen/OpenAI适配器)                  │
+├─────────────────────────────────────────────────────────────────┤
+│  数据层                                                         │
+│  ├─ MongoDB (持久化存储)         ├─ Redis (缓存)               │
+│  └─ 多数据源: AKShare | 东方财富 | FinnHub | Serper             │
+├─────────────────────────────────────────────────────────────────┤
+│  外部爬虫 (PlaywriteOCR - 独立服务, 端口9527)                   │
+│  └─ 8个爬虫: 财联社/华尔街见闻/智通财经/今日头条等              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 方式2: 本地运行
+## 📁 核心目录结构
+
+| 目录 | 用途 | 核心文件数 |
+|------|------|------------|
+| `app/` | 后端服务 | 168个文件 |
+| `app/routers/` | API路由 | 37个模块 |
+| `app/services/` | 业务逻辑 | 61个模块 |
+| `app/worker/` | 后台任务 | 26个模块 |
+| `tradingagents/` | AI分析核心 | 107个文件 |
+| `tradingagents/agents/` | 分析师角色 | 19个 |
+| `web/` | 前端界面 | 46个文件 |
+| `cli/` | 命令行工具 | 7个文件 |
+
+---
+
+## 📡 新闻数据采集架构（6+1并行源）
+
+```
+用户发起分析
+     ↓
+┌─────────────────────────────────────────────┐
+│           unified_news_tool.py              │
+│  (统一新闻分析器)                            │
+├─────────────────────────────────────────────┤
+│  1. 东方财富个股新闻 (stock_news_em)         │
+│  2. AKShare多源快讯 (7个财经源聚合)          │
+│  3. Serper实时搜索 (Google API)             │
+│  4. Alpha Vantage (美股专用)                 │
+│  5. RSS新闻源 (金十/财联社/格隆汇)           │
+│  6. 数据库缓存 (历史数据兜底)                │
+├─────────────────────────────────────────────┤
+│  7. PlaywriteOCR爬虫 (港股专用, 端口9527)    │
+│     → 8个爬虫并行 → 直达LLM (不经数据库)     │
+└─────────────────────────────────────────────┘
+     ↓
+  AI分析报告生成
+```
+
+---
+
+## 🚀 完整部署指南（2026最新版）
+
+以下步骤经过实测，适用于 Ubuntu/Debian 系统（包括 ARM64 架构）。
+
+### 第1步：准备工作目录
 
 ```bash
-# 1. 安装依赖
-pip install -r requirements.txt
+mkdir -p /home/tradingagents && cd /home/tradingagents
+```
 
-# 2. 配置环境变量
+### 第2步：获取代码（必须）
+
+⚠️ **重要**：必须克隆代码，否则没有最新的功能界面！
+
+```bash
+git clone -b dev https://github.com/1williamaoayers/TradingAgents-arm32.git .
+```
+
+### 第3步：配置环境变量 (API Key)
+
+复制以下命令，替换为你自己的 Key，一次性配置所有必需参数：
+
+```bash
+# 1. 复制 .env 模板
 cp .env.docker .env
-# 编辑.env文件,填入API密钥
 
-# 3. 启动应用
-streamlit run web/主页.py
+# 2. 写入你的 API Key (请替换实际值)
+cat >> .env << 'EOF'
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+FINNHUB_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ALPHA_VANTAGE_API_KEY=xxxxxxxxxxxxxxxx
+SERPER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EOF
 ```
 
----
-
-## ⚙️ 配置
-
-### 🎨 Web配置向导 (推荐)
-
-1. 启动应用后,访问 http://localhost:8501
-2. 点击侧边栏 **"⚙️ 配置向导"**
-3. 按步骤填写:
-
-### ⚠️ 重要提示：修改配置后需要重启
-
-**当您在Web界面修改API密钥或其他配置后，需要重新加载Docker容器使配置生效：**
+### 第4步：启动主应用
 
 ```bash
-# 重新加载配置（推荐）
-docker-compose down && docker-compose up -d
-
-# 或者分步执行
-docker-compose down
 docker-compose up -d
 ```
-
-**为什么需要重启？**
-- ✅ 环境变量在容器启动时加载
-- ✅ 修改.env文件不会自动更新运行中的容器
-- ✅ 重启后新配置立即生效
-
-**⚠️ 注意**：
-- ❌ 不要使用 `docker-compose restart` - 它不会重新加载.env文件
-- ✅ 必须使用 `docker-compose down && docker-compose up -d` - 完全重建容器
-
-**提示**：
-- ⏱️ 重启通常只需要30-40秒
-- 💾 不会丢失任何数据
-- 🔄 配置文件已自动保存并备份
+等待约 1-2 分钟，确保 mongo/redis/tradingagents 都显示 `Healthy` 或 `Started`。
 
 ---
-   - **步骤1**: AI模型API密钥 (必填)
-   - **步骤2**: 数据源API密钥 (可选)
-   - **步骤3**: 数据库配置 (自动)
-   - **步骤4**: 高级设置 (可选)
-4. 点击 **"保存"** - 配置立即生效!
 
-### 📝 手动配置
+## 🕷️ 部署 PlaywriteOCR 爬虫（强烈推荐）
 
-编辑 `.env` 文件:
+想要港股新闻和实时财经快讯？必须部署这个！
+
+### 1. 启动爬虫容器
 
 ```bash
-# AI模型 (至少配置一个)
-DEEPSEEK_API_KEY=sk-your-deepseek-key    # 推荐,性价比高
-DASHSCOPE_API_KEY=sk-your-dashscope-key  # 可选
-OPENAI_API_KEY=sk-your-openai-key        # 可选
-
-# 数据源 (推荐配置)
-FINNHUB_API_KEY=your-finnhub-key          # 美股/港股新闻
-ALPHA_VANTAGE_API_KEY=your-alpha-key      # 美股数据
+docker run -d --name playwriteocr --restart unless-stopped -p 9527:9527 ghcr.io/1williamaoayers/playwriteocr:latest
 ```
 
-**获取API密钥**:
-- DeepSeek: https://platform.deepseek.com/
-- 通义千问: https://dashscope.aliyun.com/
-- FinnHub: https://finnhub.io/
-- Alpha Vantage: https://www.alphavantage.co/
+### 2. 对接主应用（网络互通）
 
----
-
-## 📖 使用说明
-
-### 1. 选择市场
-
-在主页选择要分析的市场:
-- 🇺🇸 美股 (如: AAPL, TSLA)
-- 🇨🇳 A股 (如: 000001, 600519)
-- 🇭🇰 港股 (如: 0700.HK, 9988.HK)
-
-### 2. 输入股票代码
-
-根据市场输入对应格式的股票代码
-
-### 3. 选择分析师
-
-- 📈 市场分析师 - 技术面分析
-- 💭 社交媒体分析师 - 情绪分析 (A股不支持)
-- 📰 新闻分析师 - 新闻事件分析
-- 💰 基本面分析师 - 财务数据分析
-
-### 4. 设置研究深度
-
-- **1级** - 快速分析 (1-2分钟)
-- **3级** - 标准分析 (3-5分钟,推荐)
-- **5级** - 全面分析 (10-15分钟)
-
-### 5. 开始分析
-
-点击 **"🚀 开始分析"** 按钮,等待AI团队完成分析
-
----
-
-## 🏗️ 架构
-
-```
-┌─────────────────────────────────────────┐
-│         Streamlit Web界面                │
-│  (配置向导 + 分析表单 + 结果展示)         │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│         AI多智能体系统                   │
-│  ┌──────────┐  ┌──────────┐             │
-│  │市场分析师│  │新闻分析师│             │
-│  └──────────┘  └──────────┘             │
-│  ┌──────────┐  ┌──────────┐             │
-│  │基本面分析│  │风险评估  │             │
-│  └──────────┘  └──────────┘             │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│         数据层                           │
-│  ┌──────────┐  ┌──────────┐             │
-│  │新闻聚合  │  │市场数据  │             │
-│  └──────────┘  └──────────┘             │
-│  ┌──────────┐  ┌──────────┐             │
-│  │MongoDB   │  │Redis缓存 │             │
-│  └──────────┘  └──────────┘             │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 🐳 Docker部署详情
-
-### 支持的架构
-
-- ✅ **x86_64** (Intel/AMD)
-- ✅ **ARM64** (Apple Silicon, ARM服务器, 树莓派4)
-
-### 目录结构
-
-```
-/home/tradingagents/          # 懒人部署目录
-├── docker-compose.yml        # 容器编排配置
-├── data/                     # 分析结果 (自动创建)
-├── logs/                     # 日志文件 (自动创建)
-├── cache/                    # 缓存数据 (自动创建)
-└── backups/                  # 配置备份 (自动创建)
-```
-
-### 常用命令
+爬虫和主应用在同一机器时，必须执行以下操作：
 
 ```bash
-# 启动服务
-docker-compose up -d
+# A. 让爬虫加入主应用网络
+docker network connect tradingagents_default playwriteocr
 
-# 查看日志
-docker-compose logs -f
+# B. 告诉主应用爬虫在哪里
+echo "SCRAPER_API_URL=http://playwriteocr:9527" >> .env
 
-# 停止服务
-docker-compose down
-
-# 重启服务
-docker-compose restart
-
-# 更新应用
-docker-compose pull && docker-compose up -d
-
-# 🔄 完整重置部署 (删除旧数据和镜像,拉取最新版本)
-cd /home/tradingagents && docker-compose down -v --rmi all && rm -rf data logs cache backups && curl -O https://raw.githubusercontent.com/1williamaoayers/TradingAgents-arm32/main/docker-compose.yml && docker-compose pull && docker-compose up -d
-
-# ⚠️ 完全卸载 (删除所有数据、镜像、文件,释放全部磁盘空间)
-cd /home/tradingagents && docker-compose down -v --rmi all && cd / && rm -rf /home/tradingagents
+# C. 重启主应用生效
+docker-compose restart tradingagents
 ```
 
----
+### 3. 验证连接
 
-## 📊 功能特性
-
-### AI模型支持
-
-- 🇨🇳 **DeepSeek V3** (推荐) - 性价比最高
-- 🇨🇳 **通义千问** - 国产稳定
-- 🌍 **OpenAI GPT** - 功能强大
-- 🌍 **Google Gemini** - 多模态
-- 🔧 **自定义OpenAI端点** - 支持兼容API
-
-### 数据源
-
-- 📰 **FinnHub** - 美股/港股新闻
-- 📈 **Alpha Vantage** - 美股数据
-- 🇨🇳 **AKShare** - A股数据
-- 📱 **财联社** - 中文财经新闻
-- 🌐 **Yahoo Finance** - 全球市场数据
-
-### 分析维度
-
-- 📈 **技术分析** - K线、均线、MACD、RSI等
-- 📰 **新闻分析** - 实时新闻、舆情分析
-- 💰 **基本面分析** - 财务数据、估值分析
-- ⚠️ **风险评估** - 多角度风险评估
-- 💭 **情绪分析** - 社交媒体情绪 (美股/港股)
+```bash
+docker exec tradingagents curl -s http://playwriteocr:9527/api/v1/health
+```
+如果返回 `{"status":"ok"...}` 说明对接成功！
 
 ---
 
-## 🔧 高级功能
+### 爬虫支持的数据源
+
+| 序号 | 数据源 | 说明 |
+|------|--------|------|
+| 1 | 今日头条 (toutiao) | 综合新闻搜索 |
+| 2 | 财联社 (cls) | A股/港股快讯 |
+| 3 | 华尔街见闻 (wallstreet) | 全球财经 |
+| 4 | 富途 (futu) | 港美股新闻 |
+| 5 | 富途研报 (futu_report) | 研究报告 |
+| 6 | 格隆汇 (gelonghui) | 港股深度 |
+| 7 | 东方财富 (eastmoney) | A股资讯 |
+| 8 | 智通财经 (zhitong) | 港股专业 |
+
+---
+
+## 🔑 配置API密钥（分析功能必需）
+
+### 进入Web配置页面
+
+1. 打开 `http://你的服务器IP:8501`
+2. 左侧菜单点击 **"⚙️ 系统配置"**
+3. 填入你的API密钥
+
+### 必需的密钥
+
+| 密钥 | 用途 | 获取地址 |
+|------|------|----------|
+| **DASHSCOPE_API_KEY** | AI分析报告 | [阿里云](https://dashscope.console.aliyun.com/) |
+
+### 可选的密钥（增强功能）
+
+| 密钥 | 用途 | 获取地址 |
+|------|------|----------|
+| FINNHUB_API_KEY | 美股新闻 | [finnhub.io](https://finnhub.io/) |
+| ALPHA_VANTAGE_API_KEY | 美股数据 | [alphavantage.co](https://www.alphavantage.co/) |
+| SERPER_API_KEY | 实时搜索 | [serper.dev](https://serper.dev/) |
+
+> 💡 **提示**：只需要DASHSCOPE_API_KEY就能用，其他是锦上添花
+
+---
+
+## 📱 功能界面说明
+
+### 首页 - 股票分析
+
+1. 输入股票代码（如 `TSLA`、`01810`、`600036`）
+2. 选择分析师（建议全选）
+3. 点击"开始分析"
+4. 等待AI生成报告（约1-3分钟）
 
 ### 自选股管理
 
-1. 添加关注的股票
-2. 系统自动收集历史新闻
-3. 定时分析和报告
+- 添加你关注的股票
+- 一键查看自选股列表
+- 快速跳转分析
 
-### 配置管理
+### 新闻同步监控
 
-- 📋 查看当前配置
-- ✏️ 在线编辑配置
-- 💾 配置备份/恢复
-- 📜 配置变更审计
-
-### 分析历史
-
-- 📊 查看历史分析
-- 🔍 搜索和筛选
-- 📥 导出报告
-- 📈 趋势分析
+- 查看最近同步状态
+- 手动触发同步（AKShare/多源/爬虫）
+- 查看各股票新闻数量
 
 ---
 
-## 🛠️ 开发
+## 🛠️ CLI命令行模式（无头分析）
 
-### 技术栈
+无需前端，直接在容器内运行分析：
 
-- **前端**: Streamlit
-- **后端**: Python 3.11
-- **AI框架**: LangGraph
-- **数据库**: MongoDB (Docker部署自动配置)
-- **缓存**: Redis (Docker部署自动配置)
-- **容器**: Docker + Docker Compose
-
-### 项目结构
-
-```
-TradingAgents-arm32/
-├── web/                    # Web前端
-│   ├── app.py             # 主应用
-│   ├── pages/             # 页面
-│   ├── components/        # 组件
-│   └── utils/             # 工具
-├── tradingagents/         # 核心逻辑
-│   ├── agents/            # AI智能体
-│   ├── dataflows/         # 数据流
-│   └── graph/             # 工作流图
-├── scripts/               # 部署脚本
-├── Dockerfile             # Docker镜像
-└── docker-compose.yml     # 容器编排
+```bash
+docker exec -it tradingagents python -m cli.main analyze
 ```
 
----
-
-## 📱 响应式设计
-
-完美支持各种设备:
-
-- 💻 **桌面端** (1920x1080+)
-- 📱 **平板** (768-1024px)
-- 📱 **手机** (320-767px)
-- 📱 **折叠屏** - 自动适配展开/折叠状态
+详细文档：[CLI使用说明书.md](./CLI使用说明书.md)
 
 ---
 
-## 🤝 贡献
+## ❓ 常见问题
 
-欢迎提交Issue和Pull Request!
+### Q: 页面打不开？
 
-1. Fork本项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启Pull Request
+检查容器状态：
+```bash
+docker ps
+```
+如果没有看到 `tradingagents`，运行：
+```bash
+cd /home/tradingagents && docker-compose up -d
+```
+
+### Q: MongoDB启动失败（Illegal instruction）？
+
+你的CPU不支持AVX指令集。确保使用本项目的 `docker-compose.yml`（已配置 `mongo:4.4`）。
+
+### Q: 分析失败？
+
+检查API密钥是否配置正确，在Web页面"系统配置"中确认
+
+### Q: 如何重启？
+
+```bash
+cd /home/tradingagents && docker-compose restart
+```
+
+### Q: 如何查看日志？
+
+```bash
+docker logs tradingagents --tail 100
+```
+
+### Q: 如何更新到最新版？
+
+```bash
+cd /home/tradingagents
+git pull origin dev
+docker-compose restart
+```
 
 ---
 
-## 📄 许可证
+## 📊 项目规模统计
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
----
-
-## 🙏 致谢
-
-- [Streamlit](https://streamlit.io/) - Web框架
-- [LangGraph](https://github.com/langchain-ai/langgraph) - AI工作流
-- [DeepSeek](https://www.deepseek.com/) - AI模型
-- [FinnHub](https://finnhub.io/) - 金融数据
-- [AKShare](https://github.com/akfamily/akshare) - A股数据
+| 指标 | 数量 |
+|------|------|
+| 主项目文件 | 1944+ |
+| Python模块 | 100+ |
+| API路由 | 37个 |
+| 服务模块 | 61个 |
+| AI分析师角色 | 19个 |
+| 外部爬虫 | 8个 |
 
 ---
 
-## 📞 联系方式
+## 🔧 定时同步调度
 
-- 📧 Email: your-email@example.com
-- 💬 Issues: [GitHub Issues](https://github.com/1williamaoayers/TradingAgents-arm32/issues)
-
----
-
-## ⭐ Star History
-
-如果这个项目对你有帮助,请给个Star⭐支持一下!
+| 任务 | 调度时间 | 用途 |
+|------|----------|------|
+| **AKShare同步** | 每4小时整点 `0 */4 * * *` | A股新闻入库 |
+| **Scraper同步** | 每4小时半点 `30 */4 * * *` | 爬虫数据入库 |
+| **MultiSource同步** | `0 5,10,21 * * *` | 多源聚合（港美股时段） |
 
 ---
 
-<p align="center">
-  Made with ❤️ by TradingAgents Team
-</p>
+## 📊 DEV版 vs MAIN版
+
+| 特性 | DEV版 | MAIN版 |
+|------|-------|--------|
+| 美股支持 | ✅ 完整(AKShare) | ⚠️ 需OpenAI |
+| 新闻去重 | ✅ 智能去重 | ❌ 无 |
+| 后端自启 | ✅ 自动 | ❌ 需手动 |
+| 定时同步 | ✅ 错峰执行 | ❌ 需手动 |
+| MongoDB兼容 | ✅ 4.4（无AVX需求） | ⚠️ 7.0（需AVX） |
+| 推荐 | 🔥 推荐使用 | - |
+
+---
+
+## 📞 获取帮助
+
+- 📖 [完整文档](https://github.com/1williamaoayers/TradingAgents-arm32/wiki)
+- 🐛 [提交Issue](https://github.com/1williamaoayers/TradingAgents-arm32/issues)
+- 💬 [讨论区](https://github.com/1williamaoayers/TradingAgents-arm32/discussions)
+
+---
+
+> 🎉 **DEV分支** - 最新功能，持续更新中！
+>
+> 最后更新: 2026-01-22

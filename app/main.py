@@ -567,7 +567,8 @@ async def lifespan(app: FastAPI):
                 result = await service.sync_news_data(
                     symbols=None,  # None + favorites_only=True 表示只同步自选股
                     max_news_per_stock=settings.NEWS_SYNC_MAX_PER_SOURCE,
-                    favorites_only=True  # 只同步自选股
+                    favorites_only=True,  # 只同步自选股
+                    sync_type="auto"
                 )
                 logger.info(
                     f"✅ 新闻同步完成: "
@@ -616,14 +617,16 @@ async def lifespan(app: FastAPI):
 
         # ==================== 原有AKShare新闻同步（保留作为备份）====================
         if settings.NEWS_SYNC_ENABLED:
+            # 优化调度：每4小时整点执行，与爬虫错峰
+            akshare_cron = "0 */4 * * *"
             scheduler.add_job(
                 run_news_sync,
-                CronTrigger.from_crontab(settings.NEWS_SYNC_CRON, timezone=settings.TIMEZONE),
+                CronTrigger.from_crontab(akshare_cron, timezone=settings.TIMEZONE),
                 id='news_sync',
                 name='新闻数据同步（AKShare）',
                 replace_existing=True
             )
-            logger.info(f"✅ 新闻同步任务已配置: {settings.NEWS_SYNC_CRON}")
+            logger.info(f"✅ 新闻同步任务已配置: {akshare_cron} (每4小时整点)")
         
         # ==================== 多源新闻同步（新增）====================
         # 使用环境变量控制是否启用多源新闻同步
@@ -631,17 +634,87 @@ async def lifespan(app: FastAPI):
         multi_source_enabled = os.getenv("MULTI_SOURCE_NEWS_ENABLED", "true").lower() == "true"
         
         if multi_source_enabled and settings.NEWS_SYNC_ENABLED:
-            # 多源新闻同步（每天凌晨2:30，避免与原任务冲突）
+            # 优化调度：每天关键时点 (05:00, 10:00, 21:00) 执行，节省配额
+            multi_source_cron = "0 5,10,21 * * *"
             scheduler.add_job(
                 run_multi_source_news_sync,
-                CronTrigger.from_crontab("30 2 * * *", timezone=settings.TIMEZONE),
+                CronTrigger.from_crontab(multi_source_cron, timezone=settings.TIMEZONE),
                 id='multi_source_news_sync',
                 name='多源新闻数据同步',
                 replace_existing=True
             )
-            logger.info(f"✅ 多源新闻同步任务已配置: 每天凌晨2:30")
+            logger.info(f"✅ 多源新闻同步任务已配置: {multi_source_cron} (每天05:00, 10:00, 21:00)")
         else:
             logger.info(f"⏸️ 多源新闻同步任务未启用或已暂停")
+
+        # ==================== PlaywriteOCR爬虫新闻同步（新增）====================
+        scraper_sync_enabled = os.getenv("SCRAPER_SYNC_ENABLED", "true").lower() == "true"
+        
+        if scraper_sync_enabled:
+            from app.worker.scraper_sync_service import get_scraper_sync_service, get_sync_interval
+            
+            async def run_scraper_news_sync():
+                """运行爬虫新闻同步任务 - 同步自选股到数据库"""
+                try:
+                    interval = get_sync_interval()
+                    logger.info(f"🕷️ 开始爬虫新闻同步（智能频率: {interval}分钟间隔）...")
+                    
+                    service = get_scraper_sync_service()
+                    result = await service.sync_favorite_stocks()
+                    
+                    if result.get("status") == "success":
+                        logger.info(
+                            f"✅ 爬虫同步完成: "
+                            f"{result.get('success_count', 0)}/{result.get('favorites_count', 0)}只股票成功, "
+                            f"新增{result.get('total_news_saved', 0)}条新闻, "
+                            f"耗时{result.get('elapsed_seconds', 0):.1f}秒"
+                        )
+                    elif result.get("status") == "skipped":
+                        logger.info(f"⏭️ 爬虫同步跳过: {result.get('reason', '无自选股')}")
+                    else:
+                        logger.warning(f"⚠️ 爬虫同步异常: {result.get('error', '未知错误')}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ 爬虫同步失败: {e}", exc_info=True)
+            
+            # 优化调度：每4小时半点执行 (00:30, 04:30...)，与AKShare错峰30分钟
+            scraper_cron = "30 */4 * * *"
+            scheduler.add_job(
+                run_scraper_news_sync,
+                CronTrigger.from_crontab(scraper_cron, timezone=settings.TIMEZONE),
+                id='scraper_news_sync',
+                name='爬虫新闻同步（自选股）',
+                replace_existing=True
+            )
+            logger.info(f"✅ 爬虫新闻同步任务已配置: {scraper_cron} (每4小时半点)")
+            
+            # 清理任务（每天凌晨3点）
+            from app.scheduler.cleanup_news import cleanup_old_scraper_news
+            
+            async def run_scraper_cleanup():
+                """运行爬虫新闻清理任务"""
+                try:
+                    logger.info("🧹 开始清理过期爬虫新闻...")
+                    result = await cleanup_old_scraper_news(retention_days=90)
+                    
+                    if result.get("status") == "success":
+                        logger.info(f"✅ 爬虫清理完成: 删除{result.get('deleted_count', 0)}条过期新闻")
+                    else:
+                        logger.warning(f"⚠️ 爬虫清理异常: {result.get('error', '未知错误')}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ 爬虫清理失败: {e}", exc_info=True)
+            
+            scheduler.add_job(
+                run_scraper_cleanup,
+                CronTrigger(hour=3, minute=0, timezone=settings.TIMEZONE),
+                id='scraper_news_cleanup',
+                name='爬虫新闻清理（90天）',
+                replace_existing=True
+            )
+            logger.info(f"✅ 爬虫清理任务已配置: 每天凌晨3:00（保留90天）")
+        else:
+            logger.info(f"⏸️ 爬虫新闻同步任务已禁用")
 
         scheduler.start()
 

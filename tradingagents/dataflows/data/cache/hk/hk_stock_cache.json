@@ -1,0 +1,42 @@
+{
+  "financial_01810": {
+    "data": {
+      "report_date": "2024-12-31 00:00:00",
+      "fiscal_year": "12-31",
+      "eps_basic": 0.95,
+      "eps_diluted": 0.93,
+      "eps_ttm": 0.942586673012,
+      "bps": 7.245625078305,
+      "per_netcash_operate": 1.565610634872,
+      "roe_avg": 13.414173416805,
+      "roe_yearly": 13.414173416805,
+      "roa": 6.504821906579,
+      "roic_yearly": 8.297774471437,
+      "net_profit_ratio": 6.4438479955,
+      "gross_profit_ratio": 20.923439563156,
+      "operate_income": 365906350000.0,
+      "operate_income_yoy": 35.0356716979,
+      "operate_income_qoq": 10.832054162597,
+      "gross_profit": 76560194000.0,
+      "gross_profit_yoy": 33.203207676828,
+      "holder_profit": 23658126000.0,
+      "holder_profit_yoy": 35.3813550229,
+      "debt_asset_ratio": 53.0689230273,
+      "current_ratio": 1.286933197647,
+      "ocf_sales": 10.739223027969,
+      "source": "akshare_eastmoney",
+      "data_count": 9
+    },
+    "timestamp": 1768811459.8642454
+  },
+  "name_01810.HK": {
+    "data": "小米集团－Ｗ",
+    "timestamp": 1768811541.308452,
+    "source": "akshare_sina"
+  },
+  "name_01810": {
+    "data": "小米集团－Ｗ",
+    "timestamp": 1768812412.5692167,
+    "source": "akshare_sina"
+  }
+}

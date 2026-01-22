@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional, Union
 import pandas as pd
 
 from ..base_provider import BaseStockDataProvider
+from tradingagents.utils.stock_utils import StockUtils
 
 logger = logging.getLogger(__name__)
 
@@ -324,14 +325,15 @@ class AKShareProvider(BaseStockDataProvider):
             return None
 
 
-    def _get_stock_news_direct(self, symbol: str, limit: int = 10) -> Optional[pd.DataFrame]:
+    def _get_stock_news_direct(self, symbol: str, limit: int = 10, query: str = None) -> Optional[pd.DataFrame]:
         """
         直接调用东方财富网新闻 API（绕过 AKShare）
         使用 curl_cffi 模拟真实浏览器，适用于 Docker 环境
 
         Args:
-            symbol: 股票代码
+            symbol: 股票代码（用于识别市场）
             limit: 返回数量限制
+            query: 搜索关键词（如果为 None 则使用 zfill 后的 symbol）
 
         Returns:
             新闻 DataFrame 或 None
@@ -342,81 +344,107 @@ class AKShareProvider(BaseStockDataProvider):
             import time
             import os
 
-            # 标准化股票代码
-            symbol_6 = symbol.zfill(6)
+            # 标准化股票代码：根据市场属性进行精确补位
+            market_info = StockUtils.get_market_info(symbol)
+            if market_info['is_hk']:
+                target_symbol = symbol.zfill(5)
+            else:
+                target_symbol = symbol.zfill(6)
+            
+            # 确定搜索关键词
+            search_keyword = query if query else target_symbol
 
-            # 构建请求参数
+            # 定义基础参数
             url = "https://search-api-web.eastmoney.com/search/jsonp"
-            param = {
-                "uid": "",
-                "keyword": symbol_6,
-                "type": ["cmsArticleWebOld"],
-                "client": "web",
-                "clientType": "web",
-                "clientVersion": "curr",
-                "param": {
-                    "cmsArticleWebOld": {
-                        "searchScope": "default",
-                        "sort": "default",
-                        "pageIndex": 1,
-                        "pageSize": limit,
-                        "preTag": "<em>",
-                        "postTag": "</em>"
-                    }
+            import re
+            
+            # 设计闭环抓取策略：
+            # 1. 核心抓取：基于股票代码搜索 公告 (notice)、研报 (report) 和 核心新闻 (cmsArticleWebOld)
+            # 2. 增强抓取：基于 AI 联想词搜索 业务新闻 (cmsArticleWebOld)
+            
+            queries_to_run = [
+                {"q": target_symbol, "types": ["notice", "report", "cmsArticleWebOld"]}, 
+            ]
+            if search_keyword != target_symbol:
+                queries_to_run.append({"q": search_keyword, "types": ["cmsArticleWebOld"]})
+            
+            final_all_news = []
+            seen_titles = set()
+            
+            for task in queries_to_run:
+                curr_q = task["q"]
+                curr_types = task["types"]
+                
+                # 构造东财接口参数
+                inner_param = {
+                    "uid": "",
+                    "keyword": curr_q,
+                    "type": curr_types,
+                    "client": "web",
+                    "clientType": "web",
+                    "clientVersion": "curr",
+                    "param": {t: {"searchScope": "default", "sort": "default", "pageIndex": 1, "pageSize": limit, "preTag": "<em>", "postTag": "</em>"} for t in curr_types}
                 }
-            }
+                
+                req_params = {
+                    "cb": f"jQuery{int(time.time() * 1000)}",
+                    "param": json.dumps(inner_param),
+                    "_": str(int(time.time() * 1000))
+                }
+                
+                try:
+                    resp = curl_requests.get(url, params=req_params, timeout=10, impersonate="chrome120")
+                    if resp.status_code == 200:
+                        t_text = resp.text
+                        if t_text.startswith("jQuery"):
+                            t_text = t_text[t_text.find("(")+1:t_text.rfind(")")]
+                        t_data = json.loads(t_text)
+                        
+                        if "result" in t_data:
+                            for stype in curr_types:
+                                items = t_data["result"].get(stype, [])
+                                if items:
+                                    for item in items:
+                                        # 标题字段提取与清理
+                                        title = item.get("title") or item.get("noticeTitle") or item.get("reportTitle") or ""
+                                        title = re.sub('<[^>]*>', '', title).strip()
+                                        if not title or title in seen_titles: continue
+                                        
+                                        # 强度过滤：公告和研报必须在标题中包含代码或其实际名称，防止杂质
+                                        if stype in ["notice", "report"]:
+                                            # 注意：target_symbol 是补位后的代码，如 01810
+                                            if target_symbol not in title and symbol not in title:
+                                                # 特例：翌日披露报表通常对应 HK 股票且内容相关
+                                                if "翌日披露报表" in title:
+                                                    pass
+                                                else:
+                                                    continue
+                                                    
+                                        seen_titles.add(title)
+                                        
+                                        # 内容与关联信息提取
+                                        content = item.get("content") or item.get("noticeContent") or item.get("summary") or ""
+                                        content = re.sub('<[^>]*>', '', content).strip()
+                                        p_time = item.get("showTime") or item.get("noticeDate") or item.get("publishDate") or ""
+                                        source = item.get("mediaName") or item.get("organName") or ("公司公告" if stype == "notice" else "研究报告")
+                                        
+                                        final_all_news.append({
+                                            "新闻标题": title,
+                                            "新闻内容": content,
+                                            "发布时间": p_time,
+                                            "新闻链接": item.get("url") or item.get("artUrl") or "",
+                                            "文章来源": source,
+                                            "新闻类型": stype
+                                        })
+                except Exception as task_e:
+                    self.logger.warning(f"⚠️ 抓取任务 {curr_q} 失败: {task_e}")
 
-            params = {
-                "cb": f"jQuery{int(time.time() * 1000)}",
-                "param": json.dumps(param),
-                "_": str(int(time.time() * 1000))
-            }
-
-            # 使用 curl_cffi 发送请求
-            response = curl_requests.get(
-                url,
-                params=params,
-                timeout=10,
-                impersonate="chrome120"
-            )
-
-            if response.status_code != 200:
-                self.logger.error(f"❌ {symbol} 东方财富网 API 返回错误: {response.status_code}")
+            if not final_all_news:
+                self.logger.warning(f"⚠️ {symbol} 未获取到任何相关新闻/公告/研报")
                 return None
 
-            # 解析 JSONP 响应
-            text = response.text
-            if text.startswith("jQuery"):
-                text = text[text.find("(")+1:text.rfind(")")]
-
-            data = json.loads(text)
-
-            # 检查返回数据
-            if "result" not in data or "cmsArticleWebOld" not in data["result"]:
-                self.logger.error(f"❌ {symbol} 东方财富网 API 返回数据结构异常")
-                return None
-
-            articles = data["result"]["cmsArticleWebOld"]
-
-            if not articles:
-                self.logger.warning(f"⚠️ {symbol} 未获取到新闻")
-                return None
-
-            # 转换为 DataFrame（与 AKShare 格式兼容）
-            news_data = []
-            for article in articles:
-                news_data.append({
-                    "新闻标题": article.get("title", ""),
-                    "新闻内容": article.get("content", ""),
-                    "发布时间": article.get("date", ""),
-                    "新闻链接": article.get("url", ""),
-                    "关键词": article.get("keywords", ""),
-                    "新闻来源": article.get("source", "东方财富网"),
-                    "新闻类型": article.get("type", "")
-                })
-
-            df = pd.DataFrame(news_data)
-            self.logger.info(f"✅ {symbol} 直接调用 API 获取新闻成功: {len(df)} 条")
+            df = pd.DataFrame(final_all_news)
+            self.logger.info(f"✅ {symbol} 闭环抓取完成: 共 {len(df)} 条 (核心={target_symbol}, 增强={search_keyword})")
             return df
 
         except Exception as e:
@@ -1179,53 +1207,101 @@ class AKShareProvider(BaseStockDataProvider):
 
             financial_data = {}
 
-            # 1. 获取主要财务指标
-            try:
-                def fetch_financial_abstract():
-                    return self.ak.stock_financial_abstract(symbol=code)
+            # 判段是否为港股 (5位代码)
+            is_hk = len(code) == 5 and code.isdigit()
+            
+            if is_hk:
+                # ==========================
+                # 🇭🇰 港股财务数据获取逻辑
+                # ==========================
+                
+                # 1. 获取资产负债表 (港股 - 全量采集 + 强制排序)
+                try:
+                    # 使用 indicator="报告期" 获取所有已发布报表
+                    balance_sheet = await asyncio.to_thread(self.ak.stock_financial_hk_report_em, stock=code, symbol="资产负债表", indicator="报告期")
+                    if balance_sheet is not None and not balance_sheet.empty:
+                        # 🔥 核心升级：废除硬编码列表，改为对返回的所有报表按日期进行倒序排列
+                        # 确保最新的季报/中报/年报永远排在第一位 (iloc[0])
+                        balance_sheet = balance_sheet.sort_values("REPORT_DATE", ascending=False)
+                        financial_data['balance_sheet'] = balance_sheet.to_dict('records')
+                        logger.debug(f"✅ {code}港股资产负债表获取成功 (最新报告期: {balance_sheet.iloc[0]['REPORT_DATE']})")
+                except Exception as e:
+                    logger.debug(f"获取{code}港股资产负债表失败: {e}")
 
-                main_indicators = await asyncio.to_thread(fetch_financial_abstract)
-                if main_indicators is not None and not main_indicators.empty:
-                    financial_data['main_indicators'] = main_indicators.to_dict('records')
-                    logger.debug(f"✅ {code}主要财务指标获取成功")
-            except Exception as e:
-                logger.debug(f"获取{code}主要财务指标失败: {e}")
+                # 2. 获取利润表 (港股 - 全量采集 + 强制排序)
+                try:
+                    income_statement = await asyncio.to_thread(self.ak.stock_financial_hk_report_em, stock=code, symbol="利润表", indicator="报告期")
+                    if income_statement is not None and not income_statement.empty:
+                        # 强制日期倒序排列
+                        income_statement = income_statement.sort_values("REPORT_DATE", ascending=False)
+                        financial_data['income_statement'] = income_statement.to_dict('records')
+                        logger.debug(f"✅ {code}港股利润表获取成功 (最新报告期: {income_statement.iloc[0]['REPORT_DATE']})")
+                except Exception as e:
+                    logger.debug(f"获取{code}港股利润表失败: {e}")
 
-            # 2. 获取资产负债表
-            try:
-                def fetch_balance_sheet():
-                    return self.ak.stock_balance_sheet_by_report_em(symbol=code)
+                # 3. 获取现金流量表 (港股 - 全量采集 + 强制排序)
+                try:
+                    cash_flow = await asyncio.to_thread(self.ak.stock_financial_hk_report_em, stock=code, symbol="现金流量表", indicator="报告期")
+                    if cash_flow is not None and not cash_flow.empty:
+                        # 强制日期倒序排列
+                        cash_flow = cash_flow.sort_values("REPORT_DATE", ascending=False)
+                        financial_data['cash_flow'] = cash_flow.to_dict('records')
+                        logger.debug(f"✅ {code}港股现金流量表获取成功 (最新报告期: {cash_flow.iloc[0]['REPORT_DATE']})")
+                except Exception as e:
+                    logger.debug(f"获取{code}港股现金流量表失败: {e}")
 
-                balance_sheet = await asyncio.to_thread(fetch_balance_sheet)
-                if balance_sheet is not None and not balance_sheet.empty:
-                    financial_data['balance_sheet'] = balance_sheet.to_dict('records')
-                    logger.debug(f"✅ {code}资产负债表获取成功")
-            except Exception as e:
-                logger.debug(f"获取{code}资产负债表失败: {e}")
+            else:
+                # ==========================
+                # 🇨🇳 A股财务数据获取逻辑 (原有逻辑)
+                # ==========================
+                
+                # 1. 获取主要财务指标
+                try:
+                    def fetch_financial_abstract():
+                        return self.ak.stock_financial_abstract(symbol=code)
 
-            # 3. 获取利润表
-            try:
-                def fetch_income_statement():
-                    return self.ak.stock_profit_sheet_by_report_em(symbol=code)
+                    main_indicators = await asyncio.to_thread(fetch_financial_abstract)
+                    if main_indicators is not None and not main_indicators.empty:
+                        financial_data['main_indicators'] = main_indicators.to_dict('records')
+                        logger.debug(f"✅ {code}主要财务指标获取成功")
+                except Exception as e:
+                    logger.debug(f"获取{code}主要财务指标失败: {e}")
 
-                income_statement = await asyncio.to_thread(fetch_income_statement)
-                if income_statement is not None and not income_statement.empty:
-                    financial_data['income_statement'] = income_statement.to_dict('records')
-                    logger.debug(f"✅ {code}利润表获取成功")
-            except Exception as e:
-                logger.debug(f"获取{code}利润表失败: {e}")
+                # 2. 获取资产负债表
+                try:
+                    def fetch_balance_sheet():
+                        return self.ak.stock_balance_sheet_by_report_em(symbol=code)
 
-            # 4. 获取现金流量表
-            try:
-                def fetch_cash_flow():
-                    return self.ak.stock_cash_flow_sheet_by_report_em(symbol=code)
+                    balance_sheet = await asyncio.to_thread(fetch_balance_sheet)
+                    if balance_sheet is not None and not balance_sheet.empty:
+                        financial_data['balance_sheet'] = balance_sheet.to_dict('records')
+                        logger.debug(f"✅ {code}资产负债表获取成功")
+                except Exception as e:
+                    logger.debug(f"获取{code}资产负债表失败: {e}")
 
-                cash_flow = await asyncio.to_thread(fetch_cash_flow)
-                if cash_flow is not None and not cash_flow.empty:
-                    financial_data['cash_flow'] = cash_flow.to_dict('records')
-                    logger.debug(f"✅ {code}现金流量表获取成功")
-            except Exception as e:
-                logger.debug(f"获取{code}现金流量表失败: {e}")
+                # 3. 获取利润表
+                try:
+                    def fetch_income_statement():
+                        return self.ak.stock_profit_sheet_by_report_em(symbol=code)
+
+                    income_statement = await asyncio.to_thread(fetch_income_statement)
+                    if income_statement is not None and not income_statement.empty:
+                        financial_data['income_statement'] = income_statement.to_dict('records')
+                        logger.debug(f"✅ {code}利润表获取成功")
+                except Exception as e:
+                    logger.debug(f"获取{code}利润表失败: {e}")
+
+                # 4. 获取现金流量表
+                try:
+                    def fetch_cash_flow():
+                        return self.ak.stock_cash_flow_sheet_by_report_em(symbol=code)
+
+                    cash_flow = await asyncio.to_thread(fetch_cash_flow)
+                    if cash_flow is not None and not cash_flow.empty:
+                        financial_data['cash_flow'] = cash_flow.to_dict('records')
+                        logger.debug(f"✅ {code}现金流量表获取成功")
+                except Exception as e:
+                    logger.debug(f"获取{code}现金流量表失败: {e}")
 
             if financial_data:
                 logger.debug(f"✅ {code}财务数据获取完成: {len(financial_data)}个数据集")
@@ -1271,13 +1347,15 @@ class AKShareProvider(BaseStockDataProvider):
                 "error": str(e)
             }
 
-    def get_stock_news_sync(self, symbol: str = None, limit: int = 10) -> Optional[pd.DataFrame]:
+    def get_stock_news_sync(self, symbol: str = None, limit: int = 10, query: str = None) -> Optional[pd.DataFrame]:
         """
-        获取股票新闻（同步版本，返回原始 DataFrame）
+        获取个股新闻（同步版本）
+        适配 UnifiedNewsTool 的调用
 
         Args:
-            symbol: 股票代码，为None时获取市场新闻
-            limit: 返回数量限制
+            symbol: 股票代码
+            limit: 返回数量
+            query: 搜索关键词
 
         Returns:
             新闻 DataFrame 或 None
@@ -1286,45 +1364,150 @@ class AKShareProvider(BaseStockDataProvider):
             return None
 
         try:
-            import akshare as ak
-            import json
-            import time
-
             if symbol:
                 # 获取个股新闻
-                self.logger.debug(f"📰 获取AKShare个股新闻: {symbol}")
+                self.logger.debug(f"📰 获取个股新闻(同步接口): {symbol}")
 
-                # 标准化股票代码
-                symbol_6 = symbol.zfill(6)
-
-                # ⚠️ 东方财富个股新闻接口(stock_news_em)目前失效(JSON解析错误)
-                # 直接返回None,避免浪费时间重试
-                self.logger.warning(f"⚠️ {symbol} AKShare个股新闻接口暂时不可用(stock_news_em接口失效)")
-                self.logger.info(f"   建议使用其他新闻源: FinnHub, Alpha Vantage, Google News")
-                return None
-            else:
-                # 获取市场新闻
-                self.logger.debug("📰 获取AKShare市场新闻")
-                news_df = ak.news_cctv()
-
-                if news_df is not None and not news_df.empty:
-                    self.logger.info(f"✅ AKShare市场新闻获取成功: {len(news_df)} 条")
-                    return news_df.head(limit) if limit else news_df
+                # 标准化股票代码：根据市场属性进行精确补位
+                market_info = StockUtils.get_market_info(symbol)
+                if market_info['is_hk']:
+                     # 港股补齐5位 (e.g. 1810 -> 01810)
+                     target_symbol = symbol.zfill(5)
                 else:
-                    self.logger.warning("⚠️ 未获取到AKShare市场新闻数据")
-                    return None
+                     # 其他（主要是A股）补齐6位
+                     target_symbol = symbol.zfill(6)
+
+                # 确定搜索关键词
+                search_keyword = query if query else target_symbol
+
+                # 🔥 强制使用更可靠的 _get_stock_news_direct 方法
+                # 注意：_get_stock_news_direct 已经是基于 curl_cffi 的同步方法
+                news_df = self._get_stock_news_direct(symbol=target_symbol, limit=limit, query=search_keyword)
+                
+                if news_df is not None and not news_df.empty:
+                    self.logger.info(f"✅ 同步接口获取到 {len(news_df)} 条个股新闻 ({target_symbol})")
+                    # 统一列名以匹配下游处理 (适配原有的字段映射需求)
+                    rename_map = {
+                        "新闻标题": "标题",
+                        "新闻内容": "内容",
+                        "文章来源": "来源",
+                        "发布时间": "时间",
+                        "新闻链接": "链接"
+                    }
+                    # 检查列是否存在，防止重命名报错
+                    available_cols = {col: rename_map[col] for col in rename_map if col in news_df.columns}
+                    if available_cols:
+                        return news_df.rename(columns=available_cols)
+                    return news_df
+            else:
+                self.logger.warning(f"⚠️ 同步接口未获取到数据: {symbol}")
+                return None
 
         except Exception as e:
-            self.logger.error(f"❌ AKShare新闻获取失败: {e}")
+            self.logger.error(f"❌ 获取个股新闻(同步)失败: {e}")
             return None
 
-    async def get_stock_news(self, symbol: str = None, limit: int = 10) -> Optional[List[Dict[str, Any]]]:
+    # =========================================================================
+    # 📰 文档对齐接口 (From 分类.md)
+    # 这些接口是为了确保代码与《分类.md》文档严格一致，方便用户查询和调用。
+    # =========================================================================
+
+    def stock_news_em(self, symbol: str) -> pd.DataFrame:
+        """
+        东方财富个股新闻
+        对应文档: stock_news_em (个股新闻-东财)
+        """
+        return self.get_stock_news_sync(symbol=symbol)
+
+    def stock_news_main_cx(self) -> pd.DataFrame:
+        """
+        财新网-财经内容精选
+        对应文档: stock_news_main_cx (财经内容精选-财新)
+        """
+        try:
+            return self.ak.stock_news_main_cx()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_news_main_cx: {e}")
+            return pd.DataFrame()
+
+    def stock_info_cjzc_em(self) -> pd.DataFrame:
+        """
+        东方财富-财经早餐
+        对应文档: stock_info_cjzc_em (财经早餐-东财)
+        """
+        try:
+            return self.ak.stock_info_cjzc_em()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_info_cjzc_em: {e}")
+            return pd.DataFrame()
+
+    def stock_info_global_em(self) -> pd.DataFrame:
+        """
+        东方财富-全球财经快讯
+        对应文档: stock_info_global_em (全球财经快讯-东财)
+        """
+        try:
+            return self.ak.stock_info_global_em()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_info_global_em: {e}")
+            return pd.DataFrame()
+
+    def stock_info_global_sina(self) -> pd.DataFrame:
+        """
+        新浪财经-全球财经快讯
+        对应文档: stock_info_global_sina (全球财经快讯-新浪)
+        """
+        try:
+            return self.ak.stock_info_global_sina()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_info_global_sina: {e}")
+            return pd.DataFrame()
+
+    def stock_info_global_ths(self) -> pd.DataFrame:
+        """
+        同花顺财经-全球财经直播
+        对应文档: stock_info_global_ths (全球财经直播-同花顺)
+        """
+        try:
+            return self.ak.stock_info_global_ths()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_info_global_ths: {e}")
+            return pd.DataFrame()
+
+    def stock_info_global_cls(self, symbol: str = "全部") -> pd.DataFrame:
+        """
+        财联社-电报
+        对应文档: stock_info_global_cls (电报-财联社)
+        """
+        try:
+            # 注意: akshare 原生接口可能需要参数，也可能不需要，这里尝试适配
+            # 这里的 symbol 参数虽然文档写了，但 akshare 底层 stock_info_global_cls 其实主要抓快讯
+            # 我们做个简单适配
+            return self.ak.stock_info_global_cls()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_info_global_cls: {e}")
+            return pd.DataFrame()
+
+    def stock_info_global_futu(self) -> pd.DataFrame:
+        """
+        富途牛牛-快讯
+        对应文档: stock_info_global_futu (快讯-富途)
+        """
+        try:
+            return self.ak.stock_info_global_futu()
+        except Exception as e:
+            self.logger.warning(f"接口调用失败 stock_info_global_futu: {e}")
+            return pd.DataFrame()
+
+
+    async def get_stock_news(self, symbol: str = None, limit: int = 10, query: str = None) -> Optional[List[Dict[str, Any]]]:
         """
         获取股票新闻（异步版本，返回结构化列表）
 
         Args:
             symbol: 股票代码，为None时获取市场新闻
             limit: 返回数量限制
+            query: 搜索关键词
 
         Returns:
             新闻列表
@@ -1341,46 +1524,62 @@ class AKShareProvider(BaseStockDataProvider):
                 # 获取个股新闻
                 self.logger.debug(f"📰 获取AKShare个股新闻: {symbol}")
 
-                # 标准化股票代码
-                symbol_6 = symbol.zfill(6)
+                # 标准化股票代码：根据市场属性进行精确补位
+                market_info = StockUtils.get_market_info(symbol)
+                if market_info['is_hk']:
+                     # 港股补齐5位 (e.g. 1810 -> 01810)
+                     target_symbol = symbol.zfill(5)
+                     self.logger.debug(f"🔍 识别为港股，代码补位: {symbol} -> {target_symbol}")
+                else:
+                     # 其他（主要是A股）补齐6位
+                     target_symbol = symbol.zfill(6)
+                     self.logger.debug(f"🔍 识别为非港股（A股），代码补位: {symbol} -> {target_symbol}")
 
-                # 检测是否在 Docker 环境中
-                is_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_CONTAINER') == 'true'
+                # 确定搜索关键词
+                search_keyword = query if query else target_symbol
 
-                # 获取东方财富个股新闻，添加重试机制
-                max_retries = 3
-                retry_delay = 1  # 秒
-                news_df = None
+                # 检测是否具有 curl_cffi 环境（取代死板的 Docker 判断）
+                try:
+                    from curl_cffi import requests as curl_requests
+                    has_curl_cffi = True
+                except ImportError:
+                    has_curl_cffi = False
 
-                # 如果在 Docker 环境中，尝试使用 curl_cffi 直接调用 API
-                if is_docker:
+                # 优先使用直连 API（多源：公告+研报+核心新闻）
+                if has_curl_cffi:
                     try:
-                        from curl_cffi import requests as curl_requests
-                        self.logger.debug(f"🐳 检测到 Docker 环境，使用 curl_cffi 直接调用 API")
+                        self.logger.debug(f"🚀 已检测到 curl_cffi，开启多源闭环抓取模式 (公告/研报/新闻)")
                         news_df = await asyncio.to_thread(
                             self._get_stock_news_direct,
-                            symbol=symbol_6,
-                            limit=limit
+                            symbol=target_symbol,
+                            limit=limit,
+                            query=query
                         )
                         if news_df is not None and not news_df.empty:
-                            self.logger.info(f"✅ {symbol} Docker 环境直接调用 API 成功")
+                            self.logger.info(f"✅ {symbol} 多源直连 API 调用成功")
                         else:
-                            self.logger.warning(f"⚠️ {symbol} Docker 环境直接调用 API 失败，回退到 AKShare")
-                            news_df = None  # 回退到 AKShare
-                    except ImportError:
-                        self.logger.warning(f"⚠️ curl_cffi 未安装，回退到 AKShare")
-                        news_df = None
+                            self.logger.warning(f"⚠️ {symbol} 多源直连 API 未返回数据，尝试回退")
+                            news_df = None
                     except Exception as e:
-                        self.logger.warning(f"⚠️ {symbol} Docker 环境直接调用 API 异常: {e}，回退到 AKShare")
+                        self.logger.warning(f"⚠️ {symbol} 多源直连 API 异常: {e}，尝试回退")
                         news_df = None
+                else:
+                    news_df = None
 
-                # 如果直接调用失败或不在 Docker 环境,使用 AKShare
+                # 如果直接调用失败或不在 Docker 环境, 尝试使用标准 AKShare 接口
                 if news_df is None:
-                    # ⚠️ 东方财富个股新闻接口(stock_news_em)目前失效(JSON解析错误)
-                    # 直接返回空列表,避免浪费时间重试
-                    self.logger.warning(f"⚠️ {symbol} AKShare个股新闻接口暂时不可用(stock_news_em接口失效)")
-                    self.logger.info(f"   建议使用其他新闻源: FinnHub, Alpha Vantage, Google News")
-                    return []
+                    try:
+                        self.logger.debug(f"🔍 尝试通过 AKShare 官方接口获取 {symbol} 新闻...")
+                        # 使用线程池运行同步的 AKShare 调用
+                        news_df = await asyncio.to_thread(
+                            ak.stock_news_em,
+                            symbol=target_symbol
+                        )
+                        if news_df is not None and not news_df.empty:
+                            self.logger.info(f"✅ {symbol} 通过 AKShare 官方接口获取成功")
+                    except Exception as ak_e:
+                        self.logger.warning(f"⚠️ {symbol} AKShare 官方接口获取失败: {ak_e}")
+                        news_df = None
 
                 if news_df is not None and not news_df.empty:
                     news_list = []
@@ -1686,6 +1885,386 @@ class AKShareProvider(BaseStockDataProvider):
             return 'research_report'
 
         return 'general'
+
+    async def get_hsgt_fund_flow(self, symbol: str, days: int = 5) -> str:
+        """
+        获取个股沪深港股通资金流向（南向/北向资金）
+
+        Args:
+            symbol: 股票代码
+            days: 历史天数
+
+        Returns:
+            结构化的文本报告
+        """
+        try:
+            import akshare as ak
+            market_info = StockUtils.get_market_info(symbol)
+            is_hk = market_info['is_hk']
+            
+            # 使用同步方法在线程池中运行
+            df = await asyncio.to_thread(
+                ak.stock_hsgt_individual_em,
+                symbol=symbol.replace('.HK', '').zfill(5) if is_hk else symbol.replace('.SH', '').replace('.SZ', '').zfill(6)
+            )
+
+            if df is not None and not df.empty:
+                import pandas as pd
+                # 极致覆盖：按日期倒序排列
+                df = df.sort_values(by='持股日期', ascending=False)
+                recent_df = df.head(days)
+                
+                report = []
+                header = f"=== 💰 {'南向资金(港股通)' if is_hk else '北向资金(沪深股通)'} 实战动向 ==="
+                report.append(f"\n{header}")
+                
+                for _, row in recent_df.iterrows():
+                    date = str(row.get('持股日期', '--'))
+                    share_ratio = row.get('持股数量占A股百分比', 0)
+                    net_change = row.get('持股市值变化-1日', 0)
+                    
+                    try:
+                        val = float(net_change) if pd.notna(net_change) else 0
+                        net_str = f"{val/100000000:.2f} 亿元" if abs(val) >= 100000000 else f"{val/10000:.2f} 万元"
+                        trend = "🔴 净流入" if val > 0 else ("🟢 净流出" if val < 0 else "⚪ 持平")
+                        report.append(f"- {date}: {trend} {net_str}, 南向持股比 {share_ratio}%")
+                    except:
+                        report.append(f"- {date}: 持仓变动 {net_change}, 持股占比 {share_ratio}%")
+                
+                return "\n".join(report)
+            else:
+                return f"\n⚠️ 未获取到 {symbol} 的资金流数据"
+        except Exception as e:
+            self.logger.warning(f"⚠️ 获取资金流数据失败: {e}")
+            return f"\n⚠️ 资金流数据暂时不可用"
+
+    def get_hsgt_fund_flow_sync(self, symbol: str, days: int = 5) -> str:
+        """同步版本的资金流获取"""
+        try:
+            import akshare as ak
+            market_info = StockUtils.get_market_info(symbol)
+            is_hk = market_info['is_hk']
+            
+            df = ak.stock_hsgt_individual_em(
+                symbol=symbol.replace('.HK', '').zfill(5) if is_hk else symbol.replace('.SH', '').replace('.SZ', '').zfill(6)
+            )
+
+            if df is not None and not df.empty:
+                # 极致覆盖：按日期倒序排列，确保取到最新数据
+                df = df.sort_values(by='持股日期', ascending=False)
+                recent_df = df.head(days)
+                
+                report = []
+                # 动态标题
+                header = f"=== 💰 {'南向资金(港股通)' if is_hk else '北向资金(沪深股通)'} 实战动向 ==="
+                report.append(f"\n{header}")
+                
+                for _, row in recent_df.iterrows():
+                    date = str(row.get('持股日期', '--'))
+                    # 命名适配：如果是港股，'持股数量占A股百分比' 实际上是 '南向持股比例'
+                    share_ratio = row.get('持股数量占A股百分比', 0)
+                    
+                    # 净买变动估计：使用 '持股市值变化-1日' 作为净流入/出的参考值
+                    net_change = row.get('持股市值变化-1日', 0)
+                    
+                    try:
+                        val = float(net_change) if pd.notna(net_change) else 0
+                        # 转换单位：亿元
+                        net_str = f"{val/100000000:.2f} 亿元" if abs(val) >= 100000000 else f"{val/10000:.2f} 万元"
+                        trend = "🔴 净流入" if val > 0 else ("🟢 净流出" if val < 0 else "⚪ 持平")
+                        report.append(f"- {date}: {trend} {net_str}, 南向持股比 {share_ratio}%")
+                    except:
+                        report.append(f"- {date}: 持仓变动 {net_change}, 持股占比 {share_ratio}%")
+                
+                return "\n".join(report)
+            return f"\n⚠️ 未获取到 {symbol} 的资金流数据"
+        except Exception as e:
+            self.logger.warning(f"⚠️ 同步获取资金流数据失败: {e}")
+            return f"\n⚠️ 资金流数据暂时不可用"
+
+    # ==================== 多源新闻接口 (基于分类.md) ====================
+    
+    def get_news_cls_telegraph(self, limit: int = 20) -> Optional[pd.DataFrame]:
+        """
+        获取财联社电报（实时快讯）
+        接口: stock_info_global_cls
+        特点: 非常实时的财经快讯，适合捕捉突发事件
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [财联社电报] 获取实时快讯...")
+            df = self.ak.stock_info_global_cls(symbol="全部")
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [财联社电报] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [财联社电报] 获取失败: {e}")
+            return None
+
+    def get_news_global_em(self, limit: int = 20) -> Optional[pd.DataFrame]:
+        """
+        获取东方财富全球财经快讯
+        接口: stock_info_global_em
+        特点: 覆盖全球财经要闻，适合宏观面分析
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [东财全球快讯] 获取财经要闻...")
+            df = self.ak.stock_info_global_em()
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [东财全球快讯] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [东财全球快讯] 获取失败: {e}")
+            return None
+
+    def get_news_global_sina(self, limit: int = 20) -> Optional[pd.DataFrame]:
+        """
+        获取新浪财经全球快讯
+        接口: stock_info_global_sina
+        特点: 新浪财经的快讯来源，覆盖面广
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [新浪快讯] 获取财经快讯...")
+            df = self.ak.stock_info_global_sina()
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [新浪快讯] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [新浪快讯] 获取失败: {e}")
+            return None
+
+    def get_news_global_ths(self, limit: int = 20) -> Optional[pd.DataFrame]:
+        """
+        获取同花顺全球财经直播
+        接口: stock_info_global_ths
+        特点: 同花顺的财经直播，包含分析师观点
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [同花顺直播] 获取财经直播...")
+            df = self.ak.stock_info_global_ths()
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [同花顺直播] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [同花顺直播] 获取失败: {e}")
+            return None
+
+    def get_news_futu(self, limit: int = 20) -> Optional[pd.DataFrame]:
+        """
+        获取富途牛牛快讯
+        接口: stock_info_global_futu
+        特点: 港股相关新闻首选，富途在港股领域有优势
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [富途快讯] 获取快讯...")
+            df = self.ak.stock_info_global_futu()
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [富途快讯] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [富途快讯] 获取失败: {e}")
+            return None
+
+    def get_news_caixin(self, limit: int = 20) -> Optional[pd.DataFrame]:
+        """
+        获取财新网财经内容精选
+        接口: stock_news_main_cx
+        特点: 财新网的深度财经报道，质量较高
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [财新网] 获取财经精选...")
+            df = self.ak.stock_news_main_cx()
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [财新网] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [财新网] 获取失败: {e}")
+            return None
+
+    def get_news_breakfast(self, limit: int = 10) -> Optional[pd.DataFrame]:
+        """
+        获取东方财富财经早餐
+        接口: stock_info_cjzc_em
+        特点: 每日早盘必读，适合开盘前分析
+        """
+        if not self.connected:
+            return None
+        try:
+            logger.info("📰 [财经早餐] 获取今日要闻...")
+            df = self.ak.stock_info_cjzc_em()
+            if df is not None and not df.empty:
+                df = df.head(limit)
+                logger.info(f"✅ [财经早餐] 获取成功: {len(df)} 条")
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ [财经早餐] 获取失败: {e}")
+            return None
+
+    def get_multi_source_news(self, limit_per_source: int = 5) -> str:
+        """
+        🔥 多源新闻聚合接口 - 一次性获取所有新闻源
+        返回格式化的Markdown文本，适合直接注入到LLM分析
+        
+        Returns:
+            格式化的多源新闻Markdown文本
+        """
+        logger.info("🚀 [多源新闻] 开始聚合7个新闻源...")
+        
+        all_news = []
+        sources_success = []
+        
+        # 1. 财联社电报
+        try:
+            df = self.get_news_cls_telegraph(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    title = row.get('标题', '') or row.get('title', '')
+                    time_val = row.get('发布时间', '') or row.get('time', '')
+                    content = row.get('内容', '') or row.get('content', '')
+                    if title:
+                        news_list.append(f"- **{title}** ({time_val})\n  {content[:100]}..." if content else f"- **{title}** ({time_val})")
+                if news_list:
+                    all_news.append(("财联社电报", "\n".join(news_list)))
+                    sources_success.append("财联社")
+        except Exception as e:
+            logger.warning(f"⚠️ 财联社电报获取失败: {e}")
+        
+        # 2. 东财全球快讯
+        try:
+            df = self.get_news_global_em(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    title = row.get('标题', '') or row.get('title', '')
+                    time_val = row.get('发布时间', '') or row.get('time', '')
+                    if title:
+                        news_list.append(f"- **{title}** ({time_val})")
+                if news_list:
+                    all_news.append(("东财全球快讯", "\n".join(news_list)))
+                    sources_success.append("东财快讯")
+        except Exception as e:
+            logger.warning(f"⚠️ 东财快讯获取失败: {e}")
+        
+        # 3. 新浪快讯
+        try:
+            df = self.get_news_global_sina(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    time_val = row.get('时间', '') or row.get('time', '')
+                    content = row.get('内容', '') or row.get('content', '')
+                    if content:
+                        news_list.append(f"- [{time_val}] {content[:150]}...")
+                if news_list:
+                    all_news.append(("新浪财经快讯", "\n".join(news_list)))
+                    sources_success.append("新浪")
+        except Exception as e:
+            logger.warning(f"⚠️ 新浪快讯获取失败: {e}")
+        
+        # 4. 同花顺直播
+        try:
+            df = self.get_news_global_ths(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    title = row.get('标题', '') or row.get('title', '')
+                    if title:
+                        news_list.append(f"- {title}")
+                if news_list:
+                    all_news.append(("同花顺财经直播", "\n".join(news_list)))
+                    sources_success.append("同花顺")
+        except Exception as e:
+            logger.warning(f"⚠️ 同花顺直播获取失败: {e}")
+        
+        # 5. 富途快讯
+        try:
+            df = self.get_news_futu(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    title = row.get('标题', '') or row.get('title', '') or row.get('内容', '')
+                    if title:
+                        news_list.append(f"- {title[:100]}...")
+                if news_list:
+                    all_news.append(("富途牛牛快讯", "\n".join(news_list)))
+                    sources_success.append("富途")
+        except Exception as e:
+            logger.warning(f"⚠️ 富途快讯获取失败: {e}")
+        
+        # 6. 财新网
+        try:
+            df = self.get_news_caixin(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    title = row.get('标题', '') or row.get('title', '')
+                    time_val = row.get('发布时间', '') or row.get('time', '')
+                    if title:
+                        news_list.append(f"- **{title}** ({time_val})")
+                if news_list:
+                    all_news.append(("财新网精选", "\n".join(news_list)))
+                    sources_success.append("财新")
+        except Exception as e:
+            logger.warning(f"⚠️ 财新网获取失败: {e}")
+        
+        # 7. 财经早餐
+        try:
+            df = self.get_news_breakfast(limit_per_source)
+            if df is not None and not df.empty:
+                news_list = []
+                for _, row in df.iterrows():
+                    title = row.get('标题', '') or row.get('title', '')
+                    date_val = row.get('日期', '') or row.get('date', '')
+                    if title:
+                        news_list.append(f"- {title} ({date_val})")
+                if news_list:
+                    all_news.append(("财经早餐", "\n".join(news_list)))
+                    sources_success.append("早餐")
+        except Exception as e:
+            logger.warning(f"⚠️ 财经早餐获取失败: {e}")
+        
+        # 构建最终报告
+        if not all_news:
+            return "⚠️ 多源新闻获取失败，所有数据源均不可用"
+        
+        report = f"# 📰 多源财经快讯聚合\n\n"
+        report += f"📊 成功数据源: {', '.join(sources_success)} ({len(sources_success)}个)\n\n"
+        report += "---\n\n"
+        
+        for source_name, content in all_news:
+            report += f"## 📌 {source_name}\n\n"
+            report += content
+            report += "\n\n---\n\n"
+        
+        total_chars = len(report)
+        logger.info(f"✅ [多源新闻] 聚合完成: {len(sources_success)}个源, {total_chars} 字符")
+        
+        return report
 
 
 # 全局提供器实例

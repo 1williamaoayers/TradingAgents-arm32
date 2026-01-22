@@ -9,6 +9,7 @@ import streamlit as st
 from datetime import datetime
 import sys
 from pathlib import Path
+import time  # 添加time模块导入
 from pymongo import MongoClient  # 🔥 添加 MongoClient 导入
 
 # 添加项目根目录到路径
@@ -101,45 +102,77 @@ def add_stock_to_db(symbol, market):
         
         user_id = "default_user"
         
-        # 检查是否已存在
-        existing = db.user_favorites.find_one({
-            "user_id": user_id,
-            "favorites.stock_code": symbol
-        })
+        # 标准化股票代码用于比较
+        clean_symbol = symbol.replace('.HK', '').replace('.SH', '').replace('.SZ', '')
         
-        if existing:
-            client.close()
-            return False, "该股票已在自选股中"
+        # 检查是否已存在（检查两种格式）
+        user_doc = db.user_favorites.find_one({"user_id": user_id})
         
-        # ✨ 改进：获取真实股票名称
+        if user_doc:
+            for fav in user_doc.get("favorites", []):
+                existing_code = fav.get("stock_code", "")
+                existing_name = fav.get("stock_name", existing_code)
+                existing_clean = existing_code.replace('.HK', '').replace('.SH', '').replace('.SZ', '')
+                
+                # 比较标准化后的代码
+                if existing_clean == clean_symbol:
+                    client.close()
+                    print(f"[DEBUG] 股票已存在: {existing_code} - {existing_name}")
+                    return False, f"⚠️ 该股票已在自选股中\n{existing_code} - {existing_name}"
+        
+        print(f"[DEBUG] 股票不存在，可以添加: {symbol}")
+        
+        # 从本地缓存获取股票名称（快速且准确）
         stock_name = symbol  # 默认使用代码
         try:
-            # 标准化代码
             clean_symbol = symbol.replace('.HK', '').replace('.SH', '').replace('.SZ', '')
             
-            # 1. 先尝试从stock_basic_info获取（A股）
-            basic_info = db.stock_basic_info.find_one({"symbol": clean_symbol})
-            if basic_info:
-                stock_name = basic_info.get('name', symbol)
-                print(f"[DEBUG] 从数据库获取: {symbol} -> {stock_name}")
+            # 1. 从缓存查询 (优先)
+            cache = db.stock_names_cache.find_one({'code': clean_symbol})
+            if cache:
+                stock_name = cache.get('name', symbol)
+                print(f"[DEBUG] 从缓存获取: {symbol} -> {stock_name}")
+            
+            # 2. 尝试从 stock_basic_info 查询 (A股备份)
+            elif db.stock_basic_info.find_one({'code': clean_symbol}):
+                basic = db.stock_basic_info.find_one({'code': clean_symbol})
+                stock_name = basic.get('name', symbol)
+                print(f"[DEBUG] 从 stock_basic_info 获取: {symbol} -> {stock_name}")
+            
+            # 3. 尝试实时获取 (最终回退)
             else:
-                # 2. 如果是港股，使用AKShare API实时获取
-                if '.HK' in symbol or market == "港股":
-                    try:
-                        import akshare as ak
-                        # 使用AKShare获取港股名称
-                        hk_info = ak.stock_hk_spot_em()
-                        # 查找匹配的股票
-                        matched = hk_info[hk_info['代码'] == clean_symbol]
-                        if not matched.empty:
-                            stock_name = matched.iloc[0]['名称']
-                            print(f"[DEBUG] 从AKShare获取: {symbol} -> {stock_name}")
-                        else:
-                            print(f"[WARNING] AKShare未找到 {symbol}")
-                    except Exception as e:
-                        print(f"[WARNING] AKShare查询失败: {e}")
+                print(f"[DEBUG] 本地数据未找到，尝试实时查询: {symbol}")
+                try:
+                    # 动态导入防止循环依赖
+                    from tradingagents.dataflows.interface import get_china_stock_info_unified
+                    
+                    # 映射市场类型
+                    market_map = {"A股": "CN", "港股": "HK", "美股": "US"}
+                    # 注意：get_china_stock_info_unified 可能需要带后缀的代码
+                    # 这里直接传原始 symbol (如 00700.HK, 600519)
+                    
+                    stock_info = get_china_stock_info_unified(symbol)
+                    if isinstance(stock_info, dict) and 'name' in stock_info:
+                         # 只有当名字不为空且不是代码本身时才采用
+                         fetched_name = stock_info['name']
+                         if fetched_name and fetched_name != symbol:
+                             stock_name = fetched_name
+                             print(f"[DEBUG] 实时查询成功: {symbol} -> {stock_name}")
+                         
+                         # 可选：写入缓存，方便下次使用
+                         try:
+                             db.stock_names_cache.update_one(
+                                 {'code': clean_symbol},
+                                 {'$set': {'name': stock_name, 'updated_at': datetime.utcnow()}},
+                                 upsert=True
+                             )
+                         except:
+                             pass
+                except Exception as api_err:
+                    print(f"[WARNING] 实时查询失败: {api_err}")
+                    
         except Exception as e:
-            print(f"[WARNING] 获取股票名称失败: {e}")
+            print(f"[WARNING] 名称查询流程异常: {e}")
         
         # 添加到数据库
         favorite_stock = {
@@ -229,9 +262,14 @@ def render_watchlist_management():
         st.info("💡 提示：请确保 MongoDB 服务已启动，或联系管理员。")
         return
     
-    # 初始化自选股列表
+    # 初始化自选股列表 - 每次都重新获取确保数据最新
     if 'watchlist' not in st.session_state or st.button("🔄 刷新", key="refresh_top"):
         st.session_state.watchlist = fetch_watchlist_from_db()
+    
+    # 在添加/删除后强制刷新
+    if 'force_refresh' in st.session_state and st.session_state.force_refresh:
+        st.session_state.watchlist = fetch_watchlist_from_db()
+        st.session_state.force_refresh = False
     
     # 顶部操作区
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -285,8 +323,8 @@ def render_watchlist_management():
                     
                     if success:
                         st.success(f"✅ {message}: {symbol_upper}")
-                        time.sleep(0.5)
-                        st.session_state.watchlist = fetch_watchlist_from_db()
+                        # 设置刷新标志
+                        st.session_state.force_refresh = True
                         st.rerun()
                     else:
                         st.warning(f"⚠️ {message}")
@@ -325,8 +363,8 @@ def render_watchlist_management():
                                 
                                 if success:
                                     st.success(f"✅ {message}: {stock['symbol']}")
-                                    time.sleep(0.5)
-                                    st.session_state.watchlist = fetch_watchlist_from_db()
+                                    # 设置刷新标志
+                                    st.session_state.force_refresh = True
                                     st.rerun()
                                 else:
                                     st.error(f"❌ {message}")
