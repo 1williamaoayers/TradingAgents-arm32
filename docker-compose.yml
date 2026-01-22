@@ -16,7 +16,8 @@ services:
   # MongoDB 数据库
   # ==========================================
   mongodb:
-    image: mongo:7
+    # 使用 mongo:4.4 兼容无 AVX 指令集的 CPU（MongoDB 5.0+ 强制要求 AVX）
+    image: mongo:4.4
     container_name: tradingagents-mongodb
     restart: unless-stopped
     ports:
@@ -39,7 +40,8 @@ services:
         reservations:
           memory: 128M
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      # mongo:4.4 使用 mongo shell 而非 mongosh
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
       interval: 60s
       timeout: 10s
       retries: 3
