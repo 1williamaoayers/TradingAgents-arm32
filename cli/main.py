@@ -9,7 +9,7 @@ from collections import deque
 from difflib import get_close_matches
 from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 # 第三方库导入
 import typer
@@ -1025,12 +1025,77 @@ def check_api_keys(llm_provider: str) -> bool:
 
     return True
 
-def run_analysis():
+def run_analysis(predefined_config: Optional[dict] = None):
     import time
     start_time = time.time()  # 记录开始时间
     
     # First get all user selections
-    selections = get_user_selections()
+    if predefined_config:
+        logger.info("Starting analysis with predefined configuration (Non-Interactive Mode)")
+        
+        # Map market_id to full market object if possible
+        markets = {
+            "1": {
+                "name": "美股",
+                "name_en": "US Stock",
+                "data_source": "yahoo_finance",
+                "format": "Direct input",
+                "pattern": r'^[A-Z]{1,5}$',
+                "default": "",
+                "examples": []
+            },
+            "2": {
+                "name": "A股",
+                "name_en": "China A-Share",
+                "data_source": "china_stock",
+                "format": "6 digits",
+                "pattern": r'^\d{6}$',
+                "default": "",
+                "examples": []
+            },
+            "3": {
+                "name": "港股",
+                "name_en": "Hong Kong Stock",
+                "data_source": "yahoo_finance",
+                "format": "XXXX.HK",
+                "pattern": r'^\d{4,5}\.HK$',
+                "default": "",
+                "examples": []
+            }
+        }
+        
+        market_id = predefined_config.get("market_id", "2")
+        market_info = markets.get(market_id, markets["2"])
+        
+        # Default values for missing fields
+        selections = {
+            "ticker": predefined_config.get("ticker", ""),
+            "market": market_info,
+            "analysis_date": predefined_config.get("analysis_date", datetime.datetime.now().strftime("%Y-%m-%d")),
+            # Use enum values for analysts
+            "analysts": predefined_config.get("analysts", [AnalystType.MARKET, AnalystType.NEWS, AnalystType.FUNDAMENTALS, AnalystType.SOCIAL]),
+            "research_depth": int(predefined_config.get("research_depth", 3)), # Default to 3
+            "llm_provider": predefined_config.get("llm_provider", "deepseek v3"), # Default to DeepSeek
+            "backend_url": predefined_config.get("backend_url", "https://api.deepseek.com"), # Default DeepSeek API
+            "shallow_thinker": "deepseek-chat", # Default
+            "deep_thinker": "deepseek-chat",   # Default
+        }
+        
+        # Handle backend URL for different providers if not explicitly set
+        if not predefined_config.get("backend_url"):
+            if "deepseek" in selections["llm_provider"]:
+                selections["backend_url"] = "https://api.deepseek.com"
+            elif "dashscope" in selections["llm_provider"]:
+                selections["backend_url"] = "https://dashscope.aliyuncs.com/api/v1"
+
+        
+        # Validate essential fields
+        if not selections["ticker"]:
+            ui.show_error("❌ Non-interactive mode requires a ticker symbol (--ticker)")
+            return
+            
+    else:
+        selections = get_user_selections()
 
     # Check API keys before proceeding
     if not check_api_keys(selections["llm_provider"]):
@@ -1608,12 +1673,50 @@ def run_analysis():
     name="analyze",
     help="开始股票分析 | Start stock analysis"
 )
-def analyze():
+def analyze(
+    ticker: Optional[str] = typer.Option(None, "--ticker", "-t", help="股票代码 | Ticker symbol"),
+    market: Optional[str] = typer.Option(None, "--market", "-m", help="市场类型 (1=美股, 2=A股, 3=港股) | Market type"),
+    date: Optional[str] = typer.Option(None, "--date", "-d", help="分析日期 (YYYY-MM-DD) | Analysis date"),
+    depth: Optional[int] = typer.Option(None, "--depth", "-l", help="研究深度 (1-5) | Research depth"),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM提供商 (dashscope/openai/google/anthropic) | LLM provider"),
+    analysts: Optional[List[str]] = typer.Option(None, "--analysts", "-a", help="指定分析师 (market/news/fundamentals/social) | Specific analysts"),
+):
     """
-    启动交互式股票分析工具
-    Launch interactive stock analysis tool
+    启动股票分析工具 (支持交互式和命令行参数)
+    Launch stock analysis tool (supports both interactive and CLI args)
     """
-    run_analysis()
+    # 构建预定义配置字典
+    predefined_config = {}
+    
+    if ticker or market or date:
+        # 如果提供了任意核心参数，尝试非交互式启动
+        logger.info("[CLI] 检测到命令行参数，尝试非交互模式启动...")
+        
+        if ticker: predefined_config['ticker'] = ticker
+        if market: predefined_config['market_id'] = market  # 传递选择的ID (1,2,3)
+        if date: predefined_config['analysis_date'] = date
+        if depth: predefined_config['research_depth'] = depth
+        if provider: predefined_config['llm_provider'] = provider
+        if analysts:
+            # 将字符串列表转换为 AnalystType 枚举
+            valid_analysts = []
+            for a in analysts:
+                try:
+                    # 尝试匹配 AnalystType 枚举值 (market, news, etc.)
+                    found = False
+                    for ua in AnalystType:
+                        if ua.value == a:
+                            valid_analysts.append(ua)
+                            found = True
+                            break
+                    if not found:
+                        print(f"Warning: Invalid analyst '{a}' ignored.")
+                except Exception:
+                    pass
+            if valid_analysts:
+                predefined_config["analysts"] = valid_analysts
+        
+    run_analysis(predefined_config)
 
 
 @app.command(

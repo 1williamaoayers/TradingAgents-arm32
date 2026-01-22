@@ -1006,7 +1006,8 @@ class AKShareSyncService:
         symbols: List[str] = None,
         max_news_per_stock: int = 20,
         force_update: bool = False,
-        favorites_only: bool = True
+        favorites_only: bool = True,
+        sync_type: str = None
     ) -> Dict[str, Any]:
         """
         同步新闻数据
@@ -1101,7 +1102,7 @@ class AKShareSyncService:
             # 保存同步历史
             try:
                 sync_record = {
-                    "sync_type": "manual" if favorites_only else "auto",
+                    "sync_type": sync_type if sync_type else ("manual" if favorites_only else "auto"),
                     "total_stocks": stats["total_processed"],
                     "success_count": stats["success_count"],
                     "news_count": stats["news_count"],

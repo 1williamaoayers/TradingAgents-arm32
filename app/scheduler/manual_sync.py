@@ -20,7 +20,7 @@ def main():
             service = await get_akshare_sync_service()
             print(f"服务获取成功: {type(service)}", flush=True)
             
-            result = await service.sync_news_data(symbols=None, favorites_only=True)
+            result = await service.sync_news_data(symbols=None, favorites_only=True, sync_type="manual")
             print(f"同步完成: {result}", flush=True)
             return result
         

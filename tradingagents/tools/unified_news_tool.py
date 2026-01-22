@@ -852,6 +852,54 @@ class UnifiedNewsAnalyzer:
         except Exception as e:
             logger.warning(f"[统一新闻工具] ⚠️ 东方财富获取失败: {e}")
         
+        # ==================== 数据源7: Playwright爬虫 (补全缺失代码) ====================
+        try:
+            logger.info(f"[统一新闻工具] 🕷️ [7/7] 调用 Playwright 爬虫获取深度新闻...")
+            # 动态导入防止循环引用
+            from app.worker.news_adapters.scraper_adapter import ScraperAdapter
+            import asyncio
+            
+            # 使用现有的 loop 或者创建新的
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            # 初始化适配器 (API地址由环境变量或默认值处理)
+            adapter = ScraperAdapter()
+            
+            # 使用公司名作为关键词 (比代码更准确)
+            search_keyword = company_name if company_name else stock_code
+            logger.info(f"[统一新闻工具] 🕷️ 爬虫关键词: {search_keyword}")
+            
+            # 异步调用获取新闻
+            if not loop.is_running():
+                scraper_news = loop.run_until_complete(adapter.get_news(search_keyword, limit=10))
+            else:
+                import nest_asyncio
+                nest_asyncio.apply()
+                scraper_news = loop.run_until_complete(adapter.get_news(search_keyword, limit=10))
+                
+            if scraper_news:
+                scraper_content = f"=== 🕷️ Playwright爬虫新闻 ({search_keyword}) ===\n\n"
+                
+                for news in scraper_news:
+                    title = news.get('title', '')
+                    source = news.get('source', 'Scraper')
+                    summary = news.get('summary', '')[:200]
+                    url = news.get('url', '')
+                    scraper_content += f"### {title}\n- **来源**: {source}\n- **摘要**: {summary}\n- **链接**: {url}\n\n"
+                    
+                logger.info(f"[统一新闻工具] ✅ Playwright爬虫: {len(scraper_news)}条, {len(scraper_content)} 字符")
+                all_content_parts.append(("Playwright爬虫", scraper_content))
+                sources_used.append("Playwright爬虫")
+            else:
+                 logger.info(f"[统一新闻工具] 🕷️ Playwright爬虫未返回数据")
+                 
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] ⚠️ Playwright爬虫调用失败: {e}")
+
         # ==================== 数据源2: AKShare多源财经快讯（实时）====================
         try:
             logger.info(f"[统一新闻工具] 📡 [2/6] 从AKShare聚合多源快讯...")

@@ -78,11 +78,34 @@ def get_news_stats():
         "last_sync_time": last_sync_time
     }
 
+def get_source_icon(source_type):
+    """获取来源图标"""
+    icons = {
+        "scraper": "🕷️ 爬虫",
+        "akshare": "⚡ AKShare",
+        "rss": "📡 RSS",
+        "finnhub": "🇺🇸 FinnHub",
+        "alpha_vantage": "🅰️ AlphaV",
+        "unknown": "❓ 未知"
+    }
+    # 模糊匹配
+    if "scraper" in str(source_type).lower(): return icons["scraper"]
+    if "akshare" in str(source_type).lower(): return icons["akshare"]
+    if "rss" in str(source_type).lower(): return icons["rss"]
+    return icons.get(source_type, f"📝 {source_type}")
+
 def get_source_stats():
     """获取各源统计"""
     db = get_db()
+    
+    # 聚合：优先使用 source_type，如果为空则回退到 source
     pipeline = [
-        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+        {
+            "$group": {
+                "_id": {"$ifNull": ["$source_type", "$source"]}, 
+                "count": {"$sum": 1}
+            }
+        },
         {"$sort": {"count": -1}}
     ]
     
@@ -91,7 +114,9 @@ def get_source_stats():
     for item in db.stock_news.aggregate(pipeline):
         count = item["count"]
         total += count
-        sources.append({"source": item["_id"] or "未知", "count": count})
+        raw_source = item["_id"] or "unknown"
+        display_source = get_source_icon(raw_source)
+        sources.append({"source": display_source, "count": count})
     
     for s in sources:
         s["percentage"] = round(s["count"] / total * 100, 1) if total > 0 else 0
@@ -147,11 +172,16 @@ def get_sync_history():
         else:
             time_str = "N/A"
             
+        # 格式化新闻数：新增 (抓取)
+        news_count_display = f"{record.get('news_count', 0)}"
+        if 'fetched_count' in record:
+            news_count_display += f" (抓{record.get('fetched_count', 0)})"
+            
         history.append({
             "sync_time": time_str,
             "sync_type": record.get("sync_type", "unknown"),
             "status": record.get("status", "unknown"),
-            "news_count": record.get("news_count", 0),
+            "news_count_display": news_count_display,  # 使用格式化后的字符串
             "duration": round(record.get("duration", 0), 1)
         })
     
@@ -161,30 +191,48 @@ def get_sync_history():
 st.title("📰 新闻同步监控")
 st.markdown("---")
 
-# 手动同步函数
-def trigger_manual_sync():
-    """触发手动新闻同步（使用subprocess避免事件循环冲突）"""
+# 手动同步函数 (通用)
+def run_sync_script(script_path, timeout=120, async_mode=False):
+    """运行指定的同步脚本"""
     import subprocess
     import json
+    import sys
     
-    # 调用独立的同步脚本
+    # 确保使用当前Python解释器
+    python_executable = sys.executable
+    
+    # 异步模式：后台运行，立即返回
+    if async_mode:
+        try:
+            # 使用 subprocess.Popen 启动后台进程
+            # stdout/stderr 重定向到 /dev/null 或临时文件，防止缓冲区满阻塞
+            subprocess.Popen(
+                [python_executable, script_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid  # 创建新会话，脱离父进程
+            )
+            return {"success": True, "message": "已在后台启动同步任务", "async": True}
+        except Exception as e:
+            raise Exception(f"启动后台任务失败: {str(e)}")
+
+    # 同步模式：等待结果
     result = subprocess.run(
-        ["python3", "/app/app/scheduler/manual_sync.py"],
+        [python_executable, script_path],
         capture_output=True,
         text=True,
-        timeout=120  # 2分钟超时
+        timeout=timeout
     )
     
     if result.returncode != 0:
         error_msg = result.stderr or result.stdout or "未知错误"
-        raise Exception(f"同步脚本执行失败: {error_msg}")
+        raise Exception(f"脚本执行失败: {error_msg}")
     
-    # 解析JSON结果（只解析最后一行，忽略日志）
     try:
         # 获取最后一行非空输出
         lines = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
         if not lines:
-            raise Exception("同步脚本无输出")
+            raise Exception("脚本无输出")
         
         # 解析最后一行JSON
         data = json.loads(lines[-1])
@@ -192,28 +240,67 @@ def trigger_manual_sync():
             raise Exception(data.get("error", "同步失败"))
         return data
     except json.JSONDecodeError:
-        raise Exception(f"无法解析同步结果: {result.stdout}")
+        raise Exception(f"无法解析结果: {result.stdout}")
 
+def trigger_akshare_sync():
+    return run_sync_script("/app/app/scheduler/manual_sync.py")
+
+def trigger_scraper_sync():
+    # 爬虫抓取改为异步模式，避免前端超时
+    return run_sync_script("/app/app/scheduler/manual_scraper_sync.py", async_mode=True)
+
+def trigger_multisource_sync():
+    # 多源聚合也改为异步模式
+    return run_sync_script("/app/app/scheduler/manual_multisource_sync.py", async_mode=True)
 
 
 # 操作按钮区
-col_refresh, col_sync, col_empty = st.columns([1, 1, 8])
+st.subheader("🛠️ 立即执行")
+col_refresh, col_ak, col_scraper, col_multi, col_empty = st.columns([1, 1.2, 1.2, 1.2, 4])
 
 with col_refresh:
     if st.button("🔄 刷新数据", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
 
-with col_sync:
-    if st.button("📥 立即同步", use_container_width=True, type="primary"):
-        with st.spinner("正在同步新闻数据..."):
+with col_ak:
+    if st.button("⚡ AKShare快讯", use_container_width=True, help="同步AKShare财经快讯"):
+        with st.spinner("正在同步财经快讯..."):
             try:
-                result = trigger_manual_sync()
-                st.success(f"✅ 同步完成！获取 {result.get('news_count', 0)} 条新闻")
+                result = trigger_akshare_sync()
+                st.success(f"✅ 完成! +{result.get('news_count', 0)}条")
                 st.cache_resource.clear()
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ 同步失败: {str(e)}")
+                st.error(f"❌ 失败: {str(e)}")
+
+with col_scraper:
+    if st.button("🕷️ 爬虫抓取", use_container_width=True, help="运行PlaywrightOCR抓取自选股"):
+        with st.spinner("正在运行爬虫抓取..."):
+            try:
+                result = trigger_scraper_sync()
+                if result.get("async"):
+                    st.success("🚀 已在后台启动! 请查看同步历史或稍后刷新监控")
+                else:
+                    st.success(f"✅ 完成! +{result.get('news_count', 0)}条")
+                st.cache_resource.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 失败: {str(e)}")
+
+with col_multi:
+    if st.button("🌐 多源聚合", use_container_width=True, help="运行多源(RSS/AlphaVantage等)聚合"):
+        with st.spinner("正在运行多源聚合..."):
+            try:
+                result = trigger_multisource_sync()
+                if result.get("async"):
+                    st.success("🚀 已在后台启动! 请查看同步历史或稍后刷新监控")
+                else:
+                    st.success(f"✅ 完成! +{result.get('news_count', 0)}条")
+                st.cache_resource.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 失败: {str(e)}")
 
 
 # 获取数据
@@ -310,7 +397,7 @@ try:
                 "sync_time": st.column_config.TextColumn("同步时间", width="medium"),
                 "sync_type": st.column_config.TextColumn("类型", width="small"),
                 "status": st.column_config.TextColumn("状态", width="small"),
-                "news_count": st.column_config.NumberColumn("新闻数", format="%d"),
+                "news_count_display": st.column_config.TextColumn("新增 (抓取)", width="small"),
                 "duration": st.column_config.NumberColumn("耗时(秒)", format="%.1f")
             },
             hide_index=True,

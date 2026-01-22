@@ -622,8 +622,8 @@ async def get_kline(
 
 
 @router.get("/{code}/news", response_model=dict)
-async def get_news(code: str, days: int = 30, limit: int = 50, include_announcements: bool = True, current_user: dict = Depends(get_current_user)):
-    """获取新闻与公告（支持A股、港股、美股）"""
+async def get_news(code: str, days: int = 30, limit: int = 50, include_announcements: bool = True):
+    """获取新闻与公告（支持A股、港股、美股）- 无需鉴权"""
     from app.services.foreign_stock_service import ForeignStockService
     from app.services.news_data_service import get_news_data_service, NewsQueryParams
 
@@ -636,15 +636,60 @@ async def get_news(code: str, days: int = 30, limit: int = 50, include_announcem
         result = await service.get_us_news(normalized_code, days=days, limit=limit)
         return ok(result)
     elif market == 'HK':
-        # 港股：暂时返回空数据（TODO: 实现港股新闻）
-        data = {
-            "code": normalized_code,
-            "days": days,
-            "limit": limit,
-            "source": "none",
-            "items": []
-        }
-        return ok(data)
+        # 港股：调用爬虫API获取新闻
+        try:
+            from app.worker.news_adapters.scraper_adapter import ScraperAdapter
+            
+            # 获取股票名称作为搜索关键词
+            db = get_mongo_db()
+            stock_info = await db["stock_basic_info"].find_one(
+                {"code": normalized_code, "market": "HK"},
+                {"name": 1}
+            )
+            
+            # 使用股票名称或代码作为关键词
+            keyword = stock_info.get("name", normalized_code) if stock_info else normalized_code
+            logger.info(f"📰 港股新闻采集: code={normalized_code}, keyword={keyword}, limit={limit}")
+            
+            # 调用爬虫API
+            adapter = ScraperAdapter()
+            news_list = await adapter.get_news(keyword, limit)
+            
+            # 转换为标准格式
+            items = []
+            for news in news_list:
+                items.append({
+                    "title": news.get("title", ""),
+                    "source": news.get("source", ""),
+                    "time": news.get("publish_time", ""),
+                    "url": news.get("url", ""),
+                    "type": "news",
+                    "content": news.get("content", ""),
+                    "summary": news.get("summary", "")
+                })
+            
+            logger.info(f"✅ 港股新闻采集完成: {len(items)} 条")
+            
+            data = {
+                "code": normalized_code,
+                "days": days,
+                "limit": limit,
+                "source": "scraper" if items else "none",
+                "items": items
+            }
+            return ok(data)
+            
+        except Exception as e:
+            logger.error(f"❌ 港股新闻采集失败: {e}", exc_info=True)
+            data = {
+                "code": normalized_code,
+                "days": days,
+                "limit": limit,
+                "source": "error",
+                "items": [],
+                "error": str(e)
+            }
+            return ok(data)
     else:
         # A股：直接调用同步服务的查询方法（包含智能回退逻辑）
         try:
