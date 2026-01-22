@@ -118,6 +118,54 @@ http://你的服务器IP:8501
 
 ---
 
+## 🕷️ PlaywriteOCR 爬虫部署（港股新闻增强）
+
+PlaywriteOCR 是独立的新闻爬虫服务，提供 8 个财经网站的实时新闻采集能力。
+
+### 部署爬虫服务
+
+```bash
+# 拉取并启动爬虫容器
+docker run -d --name playwriteocr -p 9527:9527 ghcr.io/1williamaoayers/playwriteocr:latest
+
+# 验证服务状态
+curl http://localhost:9527/api/v1/health
+```
+
+### 对接 TradingAgents
+
+如果爬虫和主应用在同一台机器，需要配置网络互通：
+
+```bash
+# 1. 让爬虫加入主应用网络
+docker network connect tradingagents_default playwriteocr
+
+# 2. 配置环境变量
+cd /home/tradingagents
+echo "SCRAPER_API_URL=http://playwriteocr:9527" >> .env
+
+# 3. 重启主应用
+docker-compose restart tradingagents
+
+# 4. 验证连接
+docker exec tradingagents curl -s http://playwriteocr:9527/api/v1/health
+```
+
+### 爬虫支持的数据源
+
+| 序号 | 数据源 | 说明 |
+|------|--------|------|
+| 1 | 今日头条 (toutiao) | 综合新闻搜索 |
+| 2 | 财联社 (cls) | A股/港股快讯 |
+| 3 | 华尔街见闻 (wallstreet) | 全球财经 |
+| 4 | 富途 (futu) | 港美股新闻 |
+| 5 | 富途研报 (futu_report) | 研究报告 |
+| 6 | 格隆汇 (gelonghui) | 港股深度 |
+| 7 | 东方财富 (eastmoney) | A股资讯 |
+| 8 | 智通财经 (zhitong) | 港股专业 |
+
+---
+
 ## 🔑 配置API密钥（分析功能必需）
 
 ### 进入Web配置页面
