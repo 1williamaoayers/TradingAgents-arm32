@@ -127,15 +127,52 @@ def add_stock_to_db(symbol, market):
         try:
             clean_symbol = symbol.replace('.HK', '').replace('.SH', '').replace('.SZ', '')
             
-            # 从缓存查询
+            # 1. 从缓存查询 (优先)
             cache = db.stock_names_cache.find_one({'code': clean_symbol})
             if cache:
                 stock_name = cache.get('name', symbol)
                 print(f"[DEBUG] 从缓存获取: {symbol} -> {stock_name}")
+            
+            # 2. 尝试从 stock_basic_info 查询 (A股备份)
+            elif db.stock_basic_info.find_one({'code': clean_symbol}):
+                basic = db.stock_basic_info.find_one({'code': clean_symbol})
+                stock_name = basic.get('name', symbol)
+                print(f"[DEBUG] 从 stock_basic_info 获取: {symbol} -> {stock_name}")
+            
+            # 3. 尝试实时获取 (最终回退)
             else:
-                print(f"[DEBUG] 缓存未找到，使用代码: {symbol}")
+                print(f"[DEBUG] 本地数据未找到，尝试实时查询: {symbol}")
+                try:
+                    # 动态导入防止循环依赖
+                    from tradingagents.dataflows.interface import get_china_stock_info_unified
+                    
+                    # 映射市场类型
+                    market_map = {"A股": "CN", "港股": "HK", "美股": "US"}
+                    # 注意：get_china_stock_info_unified 可能需要带后缀的代码
+                    # 这里直接传原始 symbol (如 00700.HK, 600519)
+                    
+                    stock_info = get_china_stock_info_unified(symbol)
+                    if isinstance(stock_info, dict) and 'name' in stock_info:
+                         # 只有当名字不为空且不是代码本身时才采用
+                         fetched_name = stock_info['name']
+                         if fetched_name and fetched_name != symbol:
+                             stock_name = fetched_name
+                             print(f"[DEBUG] 实时查询成功: {symbol} -> {stock_name}")
+                         
+                         # 可选：写入缓存，方便下次使用
+                         try:
+                             db.stock_names_cache.update_one(
+                                 {'code': clean_symbol},
+                                 {'$set': {'name': stock_name, 'updated_at': datetime.utcnow()}},
+                                 upsert=True
+                             )
+                         except:
+                             pass
+                except Exception as api_err:
+                    print(f"[WARNING] 实时查询失败: {api_err}")
+                    
         except Exception as e:
-            print(f"[WARNING] 缓存查询失败: {e}")
+            print(f"[WARNING] 名称查询流程异常: {e}")
         
         # 添加到数据库
         favorite_stock = {
